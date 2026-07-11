@@ -1,0 +1,85 @@
+{
+  "adminPassword": "admin123",
+  "members": [
+    {
+      "payments": {
+        "2026-08": false,
+        "2026-07": true
+      },
+      "registrationMonth": "2026-07",
+      "coachId": "coach_1783758911586",
+      "id": "member_1783758911586_frbs7",
+      "name": "Test Coach"
+    },
+    {
+      "registrationMonth": "2026-07",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false
+      },
+      "name": "Sandro",
+      "coachId": "coach_1783759478774",
+      "id": "member_1783759478774_q134g"
+    },
+    {
+      "id": "member_1783760358350_4132d",
+      "name": "Test Coach 123",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false
+      },
+      "coachId": "coach_1783760358350",
+      "registrationMonth": "2026-07"
+    }
+  ],
+  "bookings": [],
+  "slots": [],
+  "coaches": [
+    {
+      "color": "emerald",
+      "isAdmin": true,
+      "pin": "1234",
+      "name": "Lorenzo",
+      "id": "coach_1"
+    },
+    {
+      "id": "coach_2",
+      "name": "Anna",
+      "color": "purple"
+    },
+    {
+      "id": "coach_3",
+      "color": "amber",
+      "name": "Marco"
+    },
+    {
+      "id": "coach_4",
+      "name": "Sofia",
+      "color": "blue"
+    },
+    {
+      "id": "coach_1783758911586",
+      "name": "Test Coach",
+      "pin": "",
+      "color": "emerald",
+      "isAdmin": false
+    },
+    {
+      "isAdmin": false,
+      "pin": "",
+      "color": "emerald",
+      "name": "Sandro",
+      "id": "coach_1783759478774"
+    },
+    {
+      "id": "coach_1783760358350",
+      "name": "Test Coach 123",
+      "color": "emerald",
+      "pin": "",
+      "isAdmin": false
+    }
+  ],
+  "maxFutureWeeks": 2,
+  "slotRestrictions": {},
+  "pendingCoachRegistrations": []
+}

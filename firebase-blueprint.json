@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "Coach": {
+      "title": "Coach",
+      "description": "Coach profiles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "pin": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "sponsorName": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "status": { "type": "string" },
+        "acceptedRules": { "type": "boolean" }
+      },
+      "required": ["id", "name", "color"]
+    },
+    "Slot": {
+      "title": "Slot",
+      "description": "Available booking time slots",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "treatmentType": { "type": "string", "enum": ["viso", "corpo"] },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "isCustom": { "type": "boolean" }
+      },
+      "required": ["id", "treatmentType", "date", "time"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Bookings for a specific slot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "slotId": { "type": "string" },
+        "coachId": { "type": "string" },
+        "guestName": { "type": "string" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "slotId", "coachId", "guestName", "timestamp"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Club members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "payments": { "type": "object" },
+        "coachId": { "type": "string" },
+        "registrationMonth": { "type": "string" }
+      },
+      "required": ["id", "name", "payments"]
+    },
+    "CoachRegistration": {
+      "title": "CoachRegistration",
+      "description": "Coach signup requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "sponsorName": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "name", "phone", "email", "sponsorName", "timestamp"]
+    },
+    "EventItem": {
+      "title": "EventItem",
+      "description": "Events and meetings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "endTime": { "type": "string" },
+        "location": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "title", "date", "time"]
+    },
+    "Config": {
+      "title": "Config",
+      "description": "Global application configuration",
+      "type": "object",
+      "properties": {
+        "adminPassword": { "type": "string" },
+        "maxFutureWeeks": { "type": "number" },
+        "regolamento": { "type": "string" },
+        "slotRestrictions": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "/coaches/{coachId}": {
+      "schema": "Coach",
+      "description": "Registered coaches"
+    },
+    "/slots/{slotId}": {
+      "schema": "Slot",
+      "description": "Time slots"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Slot bookings"
+    },
+    "/members/{memberId}": {
+      "schema": "Member",
+      "description": "Registered club members"
+    },
+    "/pendingCoachRegistrations/{registrationId}": {
+      "schema": "CoachRegistration",
+      "description": "Pending coach signup registrations"
+    },
+    "/events/{eventId}": {
+      "schema": "EventItem",
+      "description": "Scheduled events"
+    },
+    "/config/{configId}": {
+      "schema": "Config",
+      "description": "Global application configuration documents"
+    }
+  }
+}

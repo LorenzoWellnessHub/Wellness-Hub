@@ -1,0 +1,6 @@
+{
+  "name": "The Wellness Hub",
+  "description": "Applicazione di gestione prenotazioni per trattamenti viso e valutazioni corporee 'The Wellness Hub', con gestione automatica di priorità e code per i coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
