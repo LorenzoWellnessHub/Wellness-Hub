@@ -16,18 +16,23 @@ try {
   console.error('Error reading firebase-applet-config.json', err);
 }
 
+// Support both standard environment variables and the local json configuration
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY || process.env.apiKey || config.apiKey,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.authDomain || config.authDomain,
+  projectId: process.env.FIREBASE_PROJECT_ID || process.env.projectId || config.projectId,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.storageBucket || config.storageBucket,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.messagingSenderId || config.messagingSenderId,
+  appId: process.env.FIREBASE_APP_ID || process.env.appId || config.appId
+};
+
 // Initialize Firebase JS SDK
-const firebaseApp = initializeApp({
-  apiKey: config.apiKey,
-  authDomain: config.authDomain,
-  projectId: config.projectId,
-  storageBucket: config.storageBucket,
-  messagingSenderId: config.messagingSenderId,
-  appId: config.appId
-});
+const firebaseApp = initializeApp(firebaseConfig);
 
 // Since the DB has a specific firestoreDatabaseId, we MUST pass it to getFirestore!
-export const db = getFirestore(firebaseApp, config.firestoreDatabaseId || '(default)');
+const dbId = process.env.FIREBASE_DATABASE_ID || process.env.firestoreDatabaseId || config.firestoreDatabaseId || '(default)';
+export const db = getFirestore(firebaseApp, dbId);
+
 
 // Collection and Document path for state
 const STATE_DOC_REF = doc(db, 'config', 'appState');
