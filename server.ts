@@ -207,25 +207,69 @@ app.use(async (req, res, next) => {
   const originalJson = res.json;
   const originalSend = res.send;
 
-  res.json = function (body) {
-    pendingWritePromise.then(() => {
-      originalJson.call(res, body);
-    }).catch((err) => {
-      console.error('Error flushing to Firestore before res.json:', err);
-      originalJson.call(res, body);
+  try {
+    Object.defineProperty(res, 'json', {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: function (body: any) {
+        pendingWritePromise.then(() => {
+          originalJson.call(res, body);
+        }).catch((err) => {
+          console.error('Error flushing to Firestore before res.json:', err);
+          originalJson.call(res, body);
+        });
+        return res;
+      }
     });
-    return res;
-  };
+  } catch (err) {
+    console.error('Failed to override res.json via Object.defineProperty:', err);
+    try {
+      res.json = function (body: any) {
+        pendingWritePromise.then(() => {
+          originalJson.call(res, body);
+        }).catch((err) => {
+          console.error('Error flushing to Firestore before res.json:', err);
+          originalJson.call(res, body);
+        });
+        return res;
+      };
+    } catch (assignErr) {
+      console.error('Failed fallback assignment for res.json:', assignErr);
+    }
+  }
 
-  res.send = function (body) {
-    pendingWritePromise.then(() => {
-      originalSend.call(res, body);
-    }).catch((err) => {
-      console.error('Error flushing to Firestore before res.send:', err);
-      originalSend.call(res, body);
+  try {
+    Object.defineProperty(res, 'send', {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: function (body: any) {
+        pendingWritePromise.then(() => {
+          originalSend.call(res, body);
+        }).catch((err) => {
+          console.error('Error flushing to Firestore before res.send:', err);
+          originalSend.call(res, body);
+        });
+        return res;
+      }
     });
-    return res;
-  };
+  } catch (err) {
+    console.error('Failed to override res.send via Object.defineProperty:', err);
+    try {
+      res.send = function (body: any) {
+        pendingWritePromise.then(() => {
+          originalSend.call(res, body);
+        }).catch((err) => {
+          console.error('Error flushing to Firestore before res.send:', err);
+          originalSend.call(res, body);
+        });
+        return res;
+      };
+    } catch (assignErr) {
+      console.error('Failed fallback assignment for res.send:', assignErr);
+    }
+  }
 
   next();
 });
