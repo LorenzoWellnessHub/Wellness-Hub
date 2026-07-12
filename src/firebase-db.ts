@@ -17,7 +17,9 @@ const storageBucket = cleanVal(process.env.FIREBASE_STORAGE_BUCKET) || cleanVal(
 const messagingSenderId = cleanVal(process.env.FIREBASE_MESSAGING_SENDER_ID) || cleanVal(process.env.messagingSenderId) || config.messagingSenderId;
 const appId = cleanVal(process.env.FIREBASE_APP_ID) || cleanVal(process.env.appId) || config.appId;
 
-const firebaseConfig = {
+// Since the DB has a specific firestoreDatabaseId, we MUST pass it to getFirestore!
+export const dbId = cleanVal(process.env.FIREBASE_DATABASE_ID) || cleanVal(process.env.firestoreDatabaseId) || config.firestoreDatabaseId || '(default)';
+export const firebaseConfig = {
   apiKey,
   authDomain,
   projectId,
@@ -28,9 +30,6 @@ const firebaseConfig = {
 
 // Initialize Firebase JS SDK
 const firebaseApp = initializeApp(firebaseConfig);
-
-// Since the DB has a specific firestoreDatabaseId, we MUST pass it to getFirestore!
-const dbId = cleanVal(process.env.FIREBASE_DATABASE_ID) || cleanVal(process.env.firestoreDatabaseId) || config.firestoreDatabaseId || '(default)';
 export const db = getFirestore(firebaseApp, dbId);
 
 

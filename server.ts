@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem } from './src/types';
-import { loadDbFromFirestore, saveDbToFirestore } from './src/firebase-db';
+import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
 const PORT = 3000;
@@ -833,6 +833,56 @@ app.delete('/api/slots/:id', (req, res) => {
   db.bookings = db.bookings.filter(b => b.slotId !== id);
   writeDb(db);
   res.json({ success: true });
+});
+
+// Diagnostic route to check Firebase connectivity and credentials on Vercel
+app.get('/api/diagnose', async (req, res) => {
+  const mask = (s: string | undefined) => {
+    if (!s) return 'MISSING';
+    if (s.length <= 8) return 'PRESENT (too short)';
+    return `${s.slice(0, 4)}...${s.slice(-4)} (${s.length} chars)`;
+  };
+
+  const results: any = {
+    env: {
+      VERCEL: process.env.VERCEL || 'not set',
+      NODE_ENV: process.env.NODE_ENV || 'not set',
+    },
+    firebaseConfigKeys: {
+      apiKey: mask(firebaseConfig.apiKey),
+      authDomain: mask(firebaseConfig.authDomain),
+      projectId: mask(firebaseConfig.projectId),
+      storageBucket: mask(firebaseConfig.storageBucket),
+      messagingSenderId: mask(firebaseConfig.messagingSenderId),
+      appId: mask(firebaseConfig.appId),
+    },
+    databaseId: dbId,
+    firestoreTest: 'not started',
+  };
+
+  try {
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+    const { db } = await import('./src/firebase-db');
+    
+    results.firestoreTest = 'Attempting getDoc on config/appState...';
+    const testDocRef = doc(db, 'config', 'appState');
+    const docSnap = await getDoc(testDocRef);
+    results.firestoreTest = 'getDoc completed!';
+    results.appStateExists = docSnap.exists();
+    if (docSnap.exists()) {
+      const dataKeys = Object.keys(docSnap.data() || {});
+      results.appStateKeys = dataKeys;
+    }
+  } catch (err: any) {
+    results.firestoreTest = `FAILED: ${err?.message || err}`;
+    results.errorDetails = {
+      name: err?.name,
+      code: err?.code,
+      stack: err?.stack,
+    };
+  }
+
+  res.json(results);
 });
 
 // GET booking state & summaries for a given date range (usually a week)
