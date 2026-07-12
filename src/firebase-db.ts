@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import config from '../firebase-applet-config.json';
 
 // Helper to sanitize environment variables (removes accidental wrapping quotes from copy-paste)
@@ -30,7 +30,9 @@ export const firebaseConfig = {
 
 // Initialize Firebase JS SDK
 const firebaseApp = initializeApp(firebaseConfig);
-export const db = getFirestore(firebaseApp, dbId);
+export const db = initializeFirestore(firebaseApp, {
+  experimentalForceLongPolling: true,
+}, dbId);
 
 
 // Collection and Document path for state
