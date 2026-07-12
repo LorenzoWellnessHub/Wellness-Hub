@@ -1,36 +1,36 @@
-import fs from 'fs';
-import path from 'path';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import config from '../firebase-applet-config.json';
 
-// Read Firebase applet configuration
-let config: any = {};
-try {
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  } else {
-    console.warn('firebase-applet-config.json not found, using empty config');
-  }
-} catch (err) {
-  console.error('Error reading firebase-applet-config.json', err);
-}
+// Helper to sanitize environment variables (removes accidental wrapping quotes from copy-paste)
+const cleanVal = (val: any): string | undefined => {
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return undefined;
+  return trimmed.replace(/^["']|["']$/g, '').trim();
+};
 
-// Support both standard environment variables and the local json configuration
+const apiKey = cleanVal(process.env.FIREBASE_API_KEY) || cleanVal(process.env.apiKey) || config.apiKey;
+const authDomain = cleanVal(process.env.FIREBASE_AUTH_DOMAIN) || cleanVal(process.env.authDomain) || config.authDomain;
+const projectId = cleanVal(process.env.FIREBASE_PROJECT_ID) || cleanVal(process.env.projectId) || config.projectId;
+const storageBucket = cleanVal(process.env.FIREBASE_STORAGE_BUCKET) || cleanVal(process.env.storageBucket) || config.storageBucket;
+const messagingSenderId = cleanVal(process.env.FIREBASE_MESSAGING_SENDER_ID) || cleanVal(process.env.messagingSenderId) || config.messagingSenderId;
+const appId = cleanVal(process.env.FIREBASE_APP_ID) || cleanVal(process.env.appId) || config.appId;
+
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || process.env.apiKey || config.apiKey,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.authDomain || config.authDomain,
-  projectId: process.env.FIREBASE_PROJECT_ID || process.env.projectId || config.projectId,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.storageBucket || config.storageBucket,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.messagingSenderId || config.messagingSenderId,
-  appId: process.env.FIREBASE_APP_ID || process.env.appId || config.appId
+  apiKey,
+  authDomain,
+  projectId,
+  storageBucket,
+  messagingSenderId,
+  appId
 };
 
 // Initialize Firebase JS SDK
 const firebaseApp = initializeApp(firebaseConfig);
 
 // Since the DB has a specific firestoreDatabaseId, we MUST pass it to getFirestore!
-const dbId = process.env.FIREBASE_DATABASE_ID || process.env.firestoreDatabaseId || config.firestoreDatabaseId || '(default)';
+const dbId = cleanVal(process.env.FIREBASE_DATABASE_ID) || cleanVal(process.env.firestoreDatabaseId) || config.firestoreDatabaseId || '(default)';
 export const db = getFirestore(firebaseApp, dbId);
 
 
