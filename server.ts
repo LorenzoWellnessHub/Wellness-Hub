@@ -861,17 +861,14 @@ app.get('/api/diagnose', async (req, res) => {
   };
 
   try {
-    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
-    const { db } = await import('./src/firebase-db');
+    const { loadDbFromFirestore } = await import('./src/firebase-db');
     
-    results.firestoreTest = 'Attempting getDoc on config/appState...';
-    const testDocRef = doc(db, 'config', 'appState');
-    const docSnap = await getDoc(testDocRef);
-    results.firestoreTest = 'getDoc completed!';
-    results.appStateExists = docSnap.exists();
-    if (docSnap.exists()) {
-      const dataKeys = Object.keys(docSnap.data() || {});
-      results.appStateKeys = dataKeys;
+    results.firestoreTest = 'Attempting REST loadDbFromFirestore...';
+    const state = await loadDbFromFirestore();
+    results.firestoreTest = 'REST load completed!';
+    results.appStateExists = state !== null;
+    if (state) {
+      results.appStateKeys = Object.keys(state);
     }
   } catch (err: any) {
     results.firestoreTest = `FAILED: ${err?.message || err}`;
