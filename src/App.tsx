@@ -1450,6 +1450,11 @@ export default function App() {
     return `https://wa.me/${cleaned}?text=${encodeURIComponent(fullText)}`;
   };
 
+  const getWhatsAppGroupLink = (title: string, message: string) => {
+    const fullText = `📢 *${title}*\n\n${message}`;
+    return `https://api.whatsapp.com/send?text=${encodeURIComponent(fullText)}`;
+  };
+
   // Send a new notification
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3479,12 +3484,21 @@ export default function App() {
                                   </span>
                                   {n.recipientId === 'all' ? (
                                     <div className="space-y-1.5">
+                                      <a
+                                        href={getWhatsAppGroupLink(n.title, n.message)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all w-full justify-center cursor-pointer border border-emerald-700/15 shadow-3xs text-center"
+                                      >
+                                        <span>👥</span> Invia sul gruppo
+                                      </a>
+
                                       <button
                                         type="button"
                                         onClick={() => setExpandedWhatsAppNotifIds(prev => ({ ...prev, [n.id]: !prev[n.id] }))}
                                         className="text-[10px] text-emerald-700 font-extrabold hover:text-emerald-800 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1.5 rounded-lg transition-all w-full justify-center cursor-pointer border border-emerald-200/50 shadow-3xs"
                                       >
-                                        <span>💬</span> {expandedWhatsAppNotifIds[n.id] ? 'Nascondi Lista Coach' : 'Invia via WhatsApp ai Singoli Coach'}
+                                        <span>💬</span> {expandedWhatsAppNotifIds[n.id] ? 'Nascondi Lista Coach' : 'Oppure invia ai Singoli Coach'}
                                       </button>
                                       
                                       {expandedWhatsAppNotifIds[n.id] && (
@@ -6815,8 +6829,21 @@ export default function App() {
             </div>
 
             <div className="space-y-2.5">
-              <p className="text-xs font-bold text-slate-600">
-                Seleziona i destinatari per inviare via WhatsApp:
+              {/* Group share button option */}
+              <div className="pb-2 border-b border-slate-100">
+                <a
+                  href={getWhatsAppGroupLink(justSentNotification.title, justSentNotification.message)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                  onClick={() => setJustSentNotification(null)}
+                >
+                  <span>👥</span> Invia sul gruppo
+                </a>
+              </div>
+
+              <p className="text-xs font-bold text-slate-600 pt-1">
+                Oppure invia ai singoli coach:
               </p>
 
               {justSentNotification.recipientId === 'all' ? (
