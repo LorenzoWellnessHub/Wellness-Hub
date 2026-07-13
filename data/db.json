@@ -1,85 +1,120 @@
 {
+  "bookings": [],
+  "pendingCoachRegistrations": [],
+  "slots": [],
   "adminPassword": "admin123",
+  "maxFutureWeeks": 2,
   "members": [
     {
+      "coachId": "coach_1783758911586",
+      "registrationMonth": "2026-07",
       "payments": {
         "2026-08": false,
         "2026-07": true
       },
-      "registrationMonth": "2026-07",
-      "coachId": "coach_1783758911586",
       "id": "member_1783758911586_frbs7",
       "name": "Test Coach"
     },
     {
+      "name": "Sandro",
+      "id": "member_1783759478774_q134g",
+      "registrationMonth": "2026-07",
+      "payments": {
+        "2026-08": false,
+        "2026-07": true
+      },
+      "coachId": "coach_1783759478774"
+    },
+    {
+      "id": "member_1783760358350_4132d",
+      "name": "Test Coach 123",
+      "coachId": "coach_1783760358350",
+      "registrationMonth": "2026-07",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false
+      }
+    },
+    {
       "registrationMonth": "2026-07",
       "payments": {
         "2026-07": true,
         "2026-08": false
       },
-      "name": "Sandro",
-      "coachId": "coach_1783759478774",
-      "id": "member_1783759478774_q134g"
+      "coachId": "coach_1783839911036",
+      "name": "prova",
+      "id": "member_1783839911036_0ehol"
     },
     {
-      "id": "member_1783760358350_4132d",
-      "name": "Test Coach 123",
+      "id": "member_1783941485301_jsi9h",
+      "name": "Sandro Test",
       "payments": {
         "2026-07": true,
         "2026-08": false
       },
-      "coachId": "coach_1783760358350",
+      "coachId": "coach_1783941485301",
       "registrationMonth": "2026-07"
     }
   ],
-  "bookings": [],
-  "slots": [],
+  "slotRestrictions": {},
   "coaches": [
     {
-      "color": "emerald",
+      "acceptedRules": true,
+      "id": "coach_1",
       "isAdmin": true,
+      "color": "emerald",
       "pin": "1234",
-      "name": "Lorenzo",
-      "id": "coach_1"
+      "name": "Lorenzo"
     },
     {
-      "id": "coach_2",
       "name": "Anna",
+      "id": "coach_2",
       "color": "purple"
     },
     {
-      "id": "coach_3",
       "color": "amber",
+      "id": "coach_3",
       "name": "Marco"
     },
     {
-      "id": "coach_4",
       "name": "Sofia",
+      "id": "coach_4",
       "color": "blue"
     },
     {
       "id": "coach_1783758911586",
-      "name": "Test Coach",
+      "isAdmin": false,
+      "color": "emerald",
+      "pin": "",
+      "name": "Test Coach"
+    },
+    {
+      "name": "Sandro",
       "pin": "",
       "color": "emerald",
+      "id": "coach_1783759478774",
       "isAdmin": false
     },
     {
-      "isAdmin": false,
-      "pin": "",
       "color": "emerald",
-      "name": "Sandro",
-      "id": "coach_1783759478774"
+      "id": "coach_1783760358350",
+      "isAdmin": false,
+      "name": "Test Coach 123",
+      "pin": ""
     },
     {
-      "id": "coach_1783760358350",
-      "name": "Test Coach 123",
+      "id": "coach_1783839911036",
+      "isAdmin": false,
+      "color": "emerald",
+      "pin": "",
+      "name": "prova"
+    },
+    {
+      "id": "coach_1783941485301",
+      "name": "Sandro Test",
       "color": "emerald",
       "pin": "",
       "isAdmin": false
     }
-  ],
-  "maxFutureWeeks": 2,
-  "slotRestrictions": {},
-  "pendingCoachRegistrations": []
+  ]
 }

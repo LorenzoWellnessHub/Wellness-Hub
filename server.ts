@@ -81,12 +81,25 @@ function readLocalDb(): DbState {
     };
   }
 
-  // Ensure fields are migrated
-  if (!state.slotRestrictions) {
-    state.slotRestrictions = {};
+  return normalizeDbState(state);
+}
+
+// Ensure loaded database states are normalized and migrated
+function normalizeDbState(state: any): DbState {
+  if (!state) {
+    state = {};
   }
   if (!state.coaches) {
     state.coaches = [];
+  }
+  if (!state.slots) {
+    state.slots = [];
+  }
+  if (!state.bookings) {
+    state.bookings = [];
+  }
+  if (!state.slotRestrictions) {
+    state.slotRestrictions = {};
   }
   if (!state.adminPassword) {
     state.adminPassword = 'admin123';
@@ -100,10 +113,13 @@ function readLocalDb(): DbState {
   if (!state.pendingCoachRegistrations) {
     state.pendingCoachRegistrations = [];
   }
+  if (!state.events) {
+    state.events = [];
+  }
   
   // Auto-populate members from bookings if empty
   if (state.members.length === 0 && state.bookings && state.bookings.length > 0) {
-    const uniqueNames = Array.from(new Set(state.bookings.map(b => b.guestName.trim()).filter(Boolean)));
+    const uniqueNames = Array.from(new Set(state.bookings.map((b: any) => b.guestName.trim()).filter(Boolean)));
     state.members = uniqueNames.map((name, i) => ({
       id: `member_${Date.now()}_${i}`,
       name,
@@ -115,7 +131,7 @@ function readLocalDb(): DbState {
   }
 
   // If Lorenzo doesn't have admin/pin, assign it
-  const lorenzo = state.coaches.find(c => c.id === 'coach_1' || c.name.toLowerCase() === 'lorenzo');
+  const lorenzo = state.coaches.find((c: any) => c.id === 'coach_1' || c.name.toLowerCase() === 'lorenzo');
   if (lorenzo) {
     if (lorenzo.isAdmin === undefined) lorenzo.isAdmin = true;
     if (!lorenzo.pin) lorenzo.pin = "1234";
@@ -125,7 +141,7 @@ function readLocalDb(): DbState {
     if (!state.coaches[0].pin) state.coaches[0].pin = "1234";
   }
 
-  return state;
+  return state as DbState;
 }
 
 // Ensure state is loaded from Firestore
@@ -142,8 +158,8 @@ async function ensureDbLoaded(): Promise<void> {
       console.log('Fetching state from Firestore...');
       const stateFromFirestore = await loadDbFromFirestore();
       if (stateFromFirestore) {
-        cachedState = stateFromFirestore;
-        console.log('Successfully loaded state from Firestore');
+        cachedState = normalizeDbState(stateFromFirestore);
+        console.log('Successfully loaded and normalized state from Firestore');
       } else {
         console.log('No state in Firestore. Seeding database state...');
         const initialLocalState = readLocalDb();

@@ -1056,7 +1056,14 @@ export default function App() {
         })
       });
       if (!response.ok) {
-        throw new Error('Errore durante il salvataggio dello stato di pagamento.');
+        let errMsg = 'Errore durante il salvataggio dello stato di pagamento.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       const updatedMember = await response.json();
       setMembers(prev => prev.map(m => m.id === member.id ? updatedMember : m));
@@ -1076,7 +1083,14 @@ export default function App() {
     try {
       const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
       if (!response.ok) {
-        throw new Error('Errore durante la rimozione del socio.');
+        let errMsg = 'Errore durante la rimozione del socio.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       setMembers(prev => prev.filter(m => m.id !== id));
       setSuccessMessage(`Socio "${name}" rimosso correttamente.`);
@@ -1137,7 +1151,14 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Errore durante la creazione del coach.');
+        let errMsg = 'Errore durante la creazione del coach.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
 
       const added = await response.json();
@@ -1166,7 +1187,14 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Errore durante la rimozione del coach.');
+        let errMsg = 'Errore durante la rimozione del coach.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
       }
 
       if (currentCoachId === coachId) {
