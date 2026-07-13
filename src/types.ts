@@ -43,6 +43,7 @@ export interface Member {
   payments: Record<string, boolean>; // key: "YYYY-MM" -> value: boolean (true = paid, false = unpaid)
   coachId?: string; // Associated coach
   registrationMonth?: string; // e.g. "2026-07"
+  quotaAmount?: number; // Specific monthly quota for this member
 }
 
 export interface CoachRegistration {

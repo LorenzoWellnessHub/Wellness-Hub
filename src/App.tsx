@@ -50,10 +50,36 @@ export default function App() {
   const [adminMgmtTab, setAdminMgmtTab] = useState<'coaches' | 'members' | 'settings'>('coaches');
   const [newMemberName, setNewMemberName] = useState<string>('');
   const [newMemberCoachId, setNewMemberCoachId] = useState<string>('');
+  const [newMemberQuota, setNewMemberQuota] = useState<string>('');
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>('');
+
+  // Payments configuration & status states
+  const [quotaAmount, setQuotaAmount] = useState<number>(30);
+  const [iban, setIban] = useState<string>('IT12X1234512345123456789012');
+  const [ibanHolder, setIbanHolder] = useState<string>('Lorenzo Wellness');
+  const [paypalUrl, setPaypalUrl] = useState<string>('https://paypal.me/LorenzoWellness');
+  const [satispayUrl, setSatispayUrl] = useState<string>('+39 333 1234567');
+
+  const [newQuotaAmount, setNewQuotaAmount] = useState<string>('30');
+  const [newIban, setNewIban] = useState<string>('');
+  const [newIbanHolder, setNewIbanHolder] = useState<string>('');
+  const [newPaypalUrl, setNewPaypalUrl] = useState<string>('');
+  const [newSatispayUrl, setNewSatispayUrl] = useState<string>('');
+
+  // Payment popup/checkout modal state
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
+  const [paymentTargetMonth, setPaymentTargetMonth] = useState<string>('');
+  const [paymentTargetMember, setPaymentTargetMember] = useState<Member | null>(null);
+  const [paymentInProgress, setPaymentInProgress] = useState<boolean>(false);
+  const [paymentMode, setPaymentMode] = useState<'card' | 'bank_transfer' | 'paypal' | 'satispay'>('card');
+  const [stripeCardNumber, setStripeCardNumber] = useState<string>('');
+  const [stripeCardExpiry, setStripeCardExpiry] = useState<string>('');
+  const [stripeCardCvc, setStripeCardCvc] = useState<string>('');
+  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string>('');
 
   // Initial user login states
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [hasDismissedPaymentNotice, setHasDismissedPaymentNotice] = useState<boolean>(false);
   const [loginSelectedCoach, setLoginSelectedCoach] = useState<Coach | null>(null);
   const [loginPinInput, setLoginPinInput] = useState<string>('');
   const [isSettingInitialPin, setIsSettingInitialPin] = useState<boolean>(false);
@@ -217,6 +243,26 @@ export default function App() {
         if (adminData.events !== undefined) {
           setEvents(adminData.events);
         }
+        if (adminData.quotaAmount !== undefined) {
+          setQuotaAmount(adminData.quotaAmount);
+          setNewQuotaAmount(String(adminData.quotaAmount));
+        }
+        if (adminData.iban !== undefined) {
+          setIban(adminData.iban);
+          setNewIban(adminData.iban);
+        }
+        if (adminData.ibanHolder !== undefined) {
+          setIbanHolder(adminData.ibanHolder);
+          setNewIbanHolder(adminData.ibanHolder);
+        }
+        if (adminData.paypalUrl !== undefined) {
+          setPaypalUrl(adminData.paypalUrl);
+          setNewPaypalUrl(adminData.paypalUrl);
+        }
+        if (adminData.satispayUrl !== undefined) {
+          setSatispayUrl(adminData.satispayUrl);
+          setNewSatispayUrl(adminData.satispayUrl);
+        }
       }
 
       // Fetch pending coach registrations
@@ -244,6 +290,46 @@ export default function App() {
   useEffect(() => {
     fetchData();
   }, [selectedMonday]);
+
+  useEffect(() => {
+    // Check query params for Stripe checkout results
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('payment_status');
+    const sessionId = urlParams.get('payment_session_id');
+    const memberId = urlParams.get('payment_member_id');
+    const monthKey = urlParams.get('payment_month_key');
+
+    if (status === 'success' && sessionId && memberId && monthKey) {
+      const verifyStripePayment = async () => {
+        try {
+          const res = await fetch('/api/payments/verify-checkout-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, memberId, monthKey })
+          });
+          if (res.ok) {
+            setPaymentSuccessMessage(`Pagamento con carta completato con successo! Quota di ${monthKey} registrata.`);
+            fetchData(); // reload data to show unblocked status
+            setTimeout(() => setPaymentSuccessMessage(''), 8000);
+          } else {
+            const err = await res.json();
+            setErrorMessage('Verifica pagamento fallita: ' + (err.error || 'Errore sconosciuto'));
+          }
+        } catch (e: any) {
+          setErrorMessage('Errore durante la verifica della transazione: ' + e.message);
+        }
+      };
+      verifyStripePayment();
+      
+      // Clean query parameters from URL to avoid duplicate triggers
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    } else if (status === 'cancelled') {
+      setErrorMessage('Pagamento annullato dal socio.');
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
 
   useEffect(() => {
     if (selectedMonday) {
@@ -995,7 +1081,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           name: newMemberName.trim(),
-          coachId: newMemberCoachId || undefined
+          coachId: newMemberCoachId || undefined,
+          quotaAmount: newMemberQuota ? Number(newMemberQuota) : undefined
         })
       });
       if (!response.ok) {
@@ -1006,6 +1093,7 @@ export default function App() {
       setMembers(prev => [...prev, created]);
       setNewMemberName('');
       setNewMemberCoachId('');
+      setNewMemberQuota('');
       setSuccessMessage(`Socio "${created.name}" aggiunto correttamente.`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
@@ -1038,6 +1126,108 @@ export default function App() {
       setErrorMessage(err.message || 'Errore durante l\'aggiornamento.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleUpdateMemberQuota = async (member: Member, amount: number | undefined) => {
+    setActionLoading(true);
+    setErrorMessage('');
+    try {
+      const response = await fetch(`/api/members/${member.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quotaAmount: amount !== undefined ? amount : null
+        })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Errore durante l\'aggiornamento della quota.');
+      }
+      const updatedMember = await response.json();
+      setMembers(prev => prev.map(m => m.id === member.id ? updatedMember : m));
+      setSuccessMessage(`Quota mensile aggiornata per ${member.name}.`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante l\'aggiornamento.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleInitiatePayment = (member: Member, monthKey: string) => {
+    setPaymentTargetMember(member);
+    setPaymentTargetMonth(monthKey);
+    setPaymentMode('bank');
+    setStripeCardNumber('');
+    setStripeCardExpiry('');
+    setStripeCardCvc('');
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleProcessPayment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!paymentTargetMember || !paymentTargetMonth) return;
+
+    setPaymentInProgress(true);
+    setErrorMessage('');
+    try {
+      if (paymentMode === 'card') {
+        const response = await fetch('/api/payments/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            memberId: paymentTargetMember.id,
+            monthKey: paymentTargetMonth,
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || 'Errore durante l\'avvio del pagamento.');
+        }
+
+        const data = await response.json();
+        if (!data.isSimulated && data.url) {
+          // Real Stripe checkout redirect
+          window.location.href = data.url;
+          return;
+        }
+
+        // Simulated card checkout delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+
+      // Call confirm payment API
+      const confirmResponse = await fetch('/api/payments/confirm-simulated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: paymentTargetMember.id,
+          monthKey: paymentTargetMonth,
+          paymentMethod: paymentMode
+        })
+      });
+
+      if (!confirmResponse.ok) {
+        const errData = await confirmResponse.json().catch(() => ({}));
+        throw new Error(errData.error || 'Errore durante la conferma del pagamento.');
+      }
+
+      const confirmData = await confirmResponse.json();
+      
+      // Update members state
+      setMembers(prev => prev.map(m => m.id === paymentTargetMember.id ? confirmData.member : m));
+      
+      const memberQuota = paymentTargetMember.quotaAmount !== undefined ? paymentTargetMember.quotaAmount : quotaAmount;
+      setPaymentSuccessMessage(`Pagamento di €${memberQuota} per ${paymentTargetMonth} registrato correttamente!`);
+      setTimeout(() => setPaymentSuccessMessage(''), 5000);
+      setIsPaymentModalOpen(false);
+      fetchData(); // Reload schedule state
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante il pagamento.');
+    } finally {
+      setPaymentInProgress(false);
     }
   };
 
@@ -1112,7 +1302,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           adminPassword: newAdminPasswordInput.trim() || undefined,
-          maxFutureWeeks: maxFutureWeeks
+          maxFutureWeeks: maxFutureWeeks,
+          quotaAmount: Number(newQuotaAmount),
+          iban: newIban.trim(),
+          ibanHolder: newIbanHolder.trim(),
+          paypalUrl: "",
+          satispayUrl: ""
         })
       });
       if (!response.ok) {
@@ -1124,7 +1319,22 @@ export default function App() {
         setAdminPassword(data.adminPassword);
         setNewAdminPasswordInput('');
       }
-      setSuccessMessage('Impostazioni e sblocco settimane salvate correttamente.');
+      if (data.quotaAmount !== undefined) {
+        setQuotaAmount(data.quotaAmount);
+      }
+      if (data.iban !== undefined) {
+        setIban(data.iban);
+      }
+      if (data.ibanHolder !== undefined) {
+        setIbanHolder(data.ibanHolder);
+      }
+      if (data.paypalUrl !== undefined) {
+        setPaypalUrl(data.paypalUrl);
+      }
+      if (data.satispayUrl !== undefined) {
+        setSatispayUrl(data.satispayUrl);
+      }
+      setSuccessMessage('Impostazioni, quote e sblocco settimane salvate correttamente.');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Errore.');
@@ -1387,9 +1597,9 @@ export default function App() {
         const monthLabel = `${itMonths[mNum - 1]} ${y}`;
 
         if (isDeadlinePassed) {
-          return { status: 'blocked', monthLabel, member: m };
+          return { status: 'blocked', monthLabel, member: m, ymKey };
         } else if (isReminderZone) {
-          return { status: 'reminder', monthLabel, member: m };
+          return { status: 'reminder', monthLabel, member: m, ymKey };
         }
       }
     }
@@ -2070,6 +2280,63 @@ export default function App() {
           </div>
         )}
 
+        {/* Payment Warning / Status Banner */}
+        {(() => {
+          if (!currentCoachId) return null;
+          const statusResult = checkCoachPaymentStatus(currentCoachId);
+          if (!statusResult) return null;
+
+          const isBlocked = statusResult.status === 'blocked';
+          return (
+            <div className={`border-l-4 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs animate-fade-in ${
+              isBlocked 
+                ? 'bg-red-50 border-red-500 text-red-900' 
+                : 'bg-amber-50 border-amber-500 text-amber-950'
+            }`}>
+              <div className="flex items-start gap-3">
+                <span className="text-xl mt-0.5">{isBlocked ? '⚠️' : '🔔'}</span>
+                <div>
+                  <p className="text-sm font-extrabold uppercase tracking-wider">
+                    {isBlocked ? 'Blocco Attivo: Quota Club Scaduta!' : 'Promemoria: Quota Club in Scadenza!'}
+                  </p>
+                  <p className="text-xs mt-1 font-medium">
+                    Il socio <strong className="font-bold">"{statusResult.member.name}"</strong> (associato a questo profilo coach) {isBlocked ? 'non ha versato la quota' : 'ha la quota in scadenza'} per il mese di <strong className="font-bold">{statusResult.monthLabel}</strong>.
+                    {isBlocked 
+                      ? ' Non puoi inserire nuove prenotazioni fino al completamento del pagamento.' 
+                      : ' Ricorda di regolarizzare entro il giorno 30.'}
+                  </p>
+                  <div className={`mt-2.5 text-[11px] font-medium p-2.5 rounded-lg border flex flex-col sm:flex-row gap-x-4 gap-y-1 ${
+                    isBlocked 
+                      ? 'bg-red-100/60 border-red-200/50 text-red-950' 
+                      : 'bg-amber-100/60 border-amber-200/50 text-amber-950'
+                  }`}>
+                    <div>
+                      <span className="font-bold opacity-75 uppercase text-[9px] block">Intestatario IBAN</span>
+                      <span className="font-semibold">{ibanHolder || "Lorenzo Wellness"}</span>
+                    </div>
+                    <div className="sm:border-l sm:pl-4 border-slate-300/40">
+                      <span className="font-bold opacity-75 uppercase text-[9px] block">IBAN per Bonifico</span>
+                      <span className="font-mono font-bold select-all">{iban || "IT00A0000000000000000000000"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleInitiatePayment(statusResult.member, statusResult.ymKey)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                  isBlocked 
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/10' 
+                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/10'
+                }`}
+              >
+                <span>💳</span>
+                Paga Quota (€{statusResult.member.quotaAmount !== undefined ? statusResult.member.quotaAmount : quotaAmount})
+              </button>
+            </div>
+          );
+        })()}
+
         {/* COLLAPSIBLE REGOLAMENTO ACCORDION */}
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs mb-4">
           <button
@@ -2636,6 +2903,17 @@ export default function App() {
                         })}
                       </select>
                     </div>
+                    <div className="w-full sm:w-24">
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Quota (€)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newMemberQuota}
+                        onChange={(e) => setNewMemberQuota(e.target.value)}
+                        placeholder={`${quotaAmount}`}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-mono font-semibold text-slate-700 h-[34px]"
+                      />
+                    </div>
                     <button
                       type="submit"
                       disabled={actionLoading || !newMemberName.trim()}
@@ -2661,6 +2939,7 @@ export default function App() {
                       <tr className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px]">
                         <th className="p-3">Nome Socio</th>
                         <th className="p-3">Coach Associato</th>
+                        <th className="p-3">Quota Mensile</th>
                         {getRecentMonths().map(m => (
                           <th key={m.ymKey} className="p-3 text-center">{m.label}</th>
                         ))}
@@ -2692,6 +2971,22 @@ export default function App() {
                                     );
                                   })}
                                 </select>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder={`${quotaAmount}`}
+                                    value={m.quotaAmount !== undefined && m.quotaAmount !== null ? m.quotaAmount : ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                      handleUpdateMemberQuota(m, val);
+                                    }}
+                                    className="w-16 text-xs bg-white border border-slate-200 rounded-lg p-1 text-center outline-none focus:ring-1 focus:ring-emerald-500 font-semibold font-mono text-slate-700"
+                                  />
+                                  <span className="text-[11px] text-slate-400 font-semibold">€</span>
+                                </div>
                               </td>
                               {recentMonths.map(month => {
                                 const regMonth = getMemberRegistrationMonth(m);
@@ -2791,6 +3086,50 @@ export default function App() {
                   <p className="text-[11px] text-slate-400">
                     I soci potranno navigare e prenotare solo le settimane sbloccate oltre a quella corrente. L'amministratore può navigare sempre senza alcuna restrizione.
                   </p>
+                </div>
+
+                {/* Parametri Pagamento Quota */}
+                <div className="space-y-3 border-t border-slate-100 pt-4 animate-fade-in">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>💳</span> Dettagli per il Pagamento della Quota (Bonifico Bancario)
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Configura la quota mensile predefinita, l'intestatario e l'IBAN per il pagamento dei soci.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-500">Importo Quota Mensile Predefinita (€)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newQuotaAmount}
+                        onChange={(e) => setNewQuotaAmount(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-500">Intestatario IBAN</label>
+                      <input
+                        type="text"
+                        value={newIbanHolder}
+                        onChange={(e) => setNewIbanHolder(e.target.value)}
+                        placeholder="Es: Lorenzo Wellness"
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500">IBAN per Bonifico Bancario</label>
+                    <input
+                      type="text"
+                      value={newIban}
+                      onChange={(e) => setNewIban(e.target.value)}
+                      placeholder="IT..."
+                      className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-700"
+                    />
+                  </div>
                 </div>
 
                 {/* Admin Password reset */}
@@ -4636,11 +4975,18 @@ export default function App() {
                   return (
                     <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">⚠️</span>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-bold">Socio non in regola con il pagamento!</p>
                         <p className="text-[11px] text-red-700 font-normal mt-0.5">
                           Il socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckNew.monthLabel} (scaduta il 30). Non è abilitato a inserire prenotazioni nel sistema.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
+                          className="mt-2 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Paga Quota (€{paymentCheckNew.member.quotaAmount !== undefined ? paymentCheckNew.member.quotaAmount : quotaAmount})
+                        </button>
                       </div>
                     </div>
                   );
@@ -4648,11 +4994,18 @@ export default function App() {
                   return (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">🔔</span>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-bold">Promemoria quota in scadenza!</p>
                         <p className="text-[11px] text-amber-700 font-normal mt-0.5">
                           Ricorda al socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckNew.monthLabel} entro il 30.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
+                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Paga Quota (€{paymentCheckNew.member.quotaAmount !== undefined ? paymentCheckNew.member.quotaAmount : quotaAmount})
+                        </button>
                       </div>
                     </div>
                   );
@@ -5086,11 +5439,18 @@ export default function App() {
                   return (
                     <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">⚠️</span>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-bold">Socio non in regola con il pagamento!</p>
                         <p className="text-[11px] text-red-700 font-normal mt-0.5">
                           Il socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckCorpo.monthLabel} (scaduta il 30). Non è abilitato a inserire prenotazioni nel sistema.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckCorpo.member, paymentCheckCorpo.ymKey)}
+                          className="mt-2 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Paga Quota (€{paymentCheckCorpo.member.quotaAmount !== undefined ? paymentCheckCorpo.member.quotaAmount : quotaAmount})
+                        </button>
                       </div>
                     </div>
                   );
@@ -5098,11 +5458,18 @@ export default function App() {
                   return (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">🔔</span>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-bold">Promemoria quota in scadenza!</p>
                         <p className="text-[11px] text-amber-700 font-normal mt-0.5">
                           Ricorda al socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckCorpo.monthLabel} entro il 30.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckCorpo.member, paymentCheckCorpo.ymKey)}
+                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Paga Quota (€{paymentCheckCorpo.member.quotaAmount !== undefined ? paymentCheckCorpo.member.quotaAmount : quotaAmount})
+                        </button>
                       </div>
                     </div>
                   );
@@ -5607,6 +5974,91 @@ export default function App() {
         </div>
       )}
 
+      {/* FORCE/AUTOMATIC PAYMENT REMINDER OR BLOCK NOTICE POPUP */}
+      {isLoggedIn && currentCoachId && !isAdminMode && !hasDismissedPaymentNotice && (() => {
+        const paymentStatus = checkCoachPaymentStatus(currentCoachId);
+        if (!paymentStatus) return null;
+        
+        const isBlocked = paymentStatus.status === 'blocked';
+        return (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl border border-slate-250 max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-2xl animate-scale-up text-left">
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border ${
+                  isBlocked ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                }`}>
+                  <span className="text-2xl">{isBlocked ? '⚠️' : '🔔'}</span>
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                    {isBlocked ? 'Accesso Limitato: Quota Scaduta' : 'Scadenza Quota in Arrivo'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {isBlocked 
+                      ? 'Rilevato mancato pagamento della quota mensile stabilita per accedere ai servizi del club.' 
+                      : 'Gentile socio, ti ricordiamo la scadenza imminente della quota associativa mensile.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-slate-700 text-xs space-y-1.5 leading-relaxed">
+                <p>
+                  Il socio associato a questo account, <strong className="font-bold text-slate-900">"{paymentStatus.member.name}"</strong>, ha la quota mensile impostata a <strong className="font-bold text-slate-900">€{paymentStatus.member.quotaAmount !== undefined ? paymentStatus.member.quotaAmount : quotaAmount}</strong> per il mese di <strong className="font-bold text-slate-900">{paymentStatus.monthLabel}</strong>.
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {isBlocked 
+                    ? 'Le funzionalità di inserimento nuove prenotazioni sono temporaneamente sospese fino al versamento della quota.' 
+                    : 'Ricorda di regolarizzare entro il giorno 30 del mese per evitare limitazioni.'}
+                </p>
+              </div>
+
+              {/* Bank Transfer details inside the warning alert */}
+              <div className="bg-slate-50/50 p-4.5 rounded-xl border border-slate-100 space-y-3">
+                <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                  Coordinate per il Pagamento (Solo Bonifico):
+                </span>
+                
+                <div className="space-y-2">
+                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                    <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
+                    <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 font-medium">
+                  Causale da inserire: <strong className="font-semibold text-slate-600">"Quota {paymentStatus.monthLabel} - {paymentStatus.member.name}"</strong>.
+                </p>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHasDismissedPaymentNotice(true);
+                    handleInitiatePayment(paymentStatus.member, paymentStatus.ymKey);
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>💳</span> Regolarizza Ora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHasDismissedPaymentNotice(true)}
+                  className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 rounded-xl transition-all border border-slate-200 cursor-pointer"
+                >
+                  {isBlocked ? 'Accedi Comunque' : 'Ignora'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Modal: ADD/EDIT EVENT FORM */}
       {showEventFormModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -5710,6 +6162,103 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* PAYMENT PROCESSOR MODAL */}
+      {isPaymentModalOpen && paymentTargetMember && paymentTargetMonth && (() => {
+        const currentTargetQuota = paymentTargetMember.quotaAmount !== undefined ? paymentTargetMember.quotaAmount : quotaAmount;
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800">
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">💳</span>
+                  <div>
+                    <h3 className="font-display font-extrabold text-sm tracking-wide">SBLOCCO QUOTA CLUB</h3>
+                    <p className="text-[10px] text-slate-400 font-mono">Transazione Protetta</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsPaymentModalOpen(false)}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-5">
+                {/* Member & Month Info Banner */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
+                  <div className="text-left space-y-0.5">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Socio Intestatario</span>
+                    <span className="text-xs font-bold text-slate-700 block">{paymentTargetMember.name}</span>
+                    <span className="text-[10px] text-slate-500 block">Mensilità: <strong className="font-semibold">{paymentTargetMonth}</strong></span>
+                  </div>
+                  <div className="bg-emerald-100 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-xl text-center">
+                    <span className="text-[10px] uppercase font-extrabold tracking-wider block opacity-70">Importo</span>
+                    <span className="text-lg font-mono font-black block">€{currentTargetQuota}</span>
+                  </div>
+                </div>
+
+              {/* Payment Details (IBAN only) */}
+              <div className="space-y-4">
+                <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-3 text-left">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🏦</span> Coordinate per il Bonifico Bancario
+                  </h4>
+                  
+                  <div className="space-y-2.5 text-xs text-slate-600">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs relative">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs relative">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
+                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
+                      Causale consigliata: <strong className="font-semibold text-slate-600">"Quota {paymentTargetMonth} - {paymentTargetMember.name}"</strong>. 
+                      Una volta effettuato il bonifico, fai clic sul pulsante <strong className="font-semibold text-slate-600">"Conferma"</strong> qui sotto per registrare il pagamento.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="bg-slate-50 p-5 border-t border-slate-100 flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={() => handleProcessPayment()}
+                disabled={paymentInProgress}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-3 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {paymentInProgress ? (
+                  <>
+                    <span className="border-2 border-white border-t-transparent rounded-full w-3.5 h-3.5 animate-spin" />
+                    <span>Elaborazione...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>{paymentMode === 'card' ? 'Paga Ora' : 'Conferma'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )})}
 
 
 

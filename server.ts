@@ -24,6 +24,11 @@ interface DbState {
   pendingCoachRegistrations?: CoachRegistration[];
   regolamento?: string;
   events?: EventItem[];
+  quotaAmount?: number;
+  iban?: string;
+  ibanHolder?: string;
+  paypalUrl?: string;
+  satispayUrl?: string;
 }
 
 let cachedState: DbState | null = null;
@@ -140,6 +145,22 @@ function normalizeDbState(state: any): DbState {
     // If no Lorenzo, make first coach admin just to have one
     if (state.coaches[0].isAdmin === undefined) state.coaches[0].isAdmin = true;
     if (!state.coaches[0].pin) state.coaches[0].pin = "1234";
+  }
+
+  if (state.quotaAmount === undefined) {
+    state.quotaAmount = 30;
+  }
+  if (state.iban === undefined) {
+    state.iban = "IT12X1234512345123456789012";
+  }
+  if (state.ibanHolder === undefined) {
+    state.ibanHolder = "Lorenzo Wellness";
+  }
+  if (state.paypalUrl === undefined) {
+    state.paypalUrl = "https://paypal.me/LorenzoWellness";
+  }
+  if (state.satispayUrl === undefined) {
+    state.satispayUrl = "+39 333 1234567";
   }
 
   return state as DbState;
@@ -317,13 +338,18 @@ app.get('/api/admin/config', (req, res) => {
     adminPassword: db.adminPassword || 'admin123',
     maxFutureWeeks: db.maxFutureWeeks !== undefined ? db.maxFutureWeeks : 2,
     regolamento: db.regolamento || `Benvenuto in The Wellness Hub!\n\n1. Ogni Coach ha la responsabilità di inserire correttamente i propri ospiti.\n2. Si prega di rispettare l'orario di inizio di ogni trattamento per non creare ritardi.\n3. Per i trattamenti Corpo/Viso, la soglia massima è di 15 postazioni contemporanee.\n4. Ogni coach ha una quota prioritaria di 4 ospiti confermati per fascia oraria; oltre questo limite gli ospiti vanno in coda/riserva.\n5. Eventuali cancellazioni devono essere effettuate con almeno 24 ore di preavviso.`,
-    events: db.events || []
+    events: db.events || [],
+    quotaAmount: db.quotaAmount !== undefined ? db.quotaAmount : 30,
+    iban: db.iban || "IT12X1234512345123456789012",
+    ibanHolder: db.ibanHolder || "Lorenzo Wellness",
+    paypalUrl: db.paypalUrl || "https://paypal.me/LorenzoWellness",
+    satispayUrl: db.satispayUrl || "+39 333 1234567"
   });
 });
 
 // POST update admin configuration
 app.post('/api/admin/config', async (req, res) => {
-  const { adminPassword, maxFutureWeeks, regolamento, events } = req.body;
+  const { adminPassword, maxFutureWeeks, regolamento, events, quotaAmount, iban, ibanHolder, paypalUrl, satispayUrl } = req.body;
   const db = readDb();
   
   if (adminPassword !== undefined) {
@@ -345,13 +371,38 @@ app.post('/api/admin/config', async (req, res) => {
     db.events = events;
   }
 
+  if (quotaAmount !== undefined) {
+    db.quotaAmount = Number(quotaAmount);
+  }
+
+  if (iban !== undefined) {
+    db.iban = iban;
+  }
+
+  if (ibanHolder !== undefined) {
+    db.ibanHolder = ibanHolder;
+  }
+
+  if (paypalUrl !== undefined) {
+    db.paypalUrl = paypalUrl;
+  }
+
+  if (satispayUrl !== undefined) {
+    db.satispayUrl = satispayUrl;
+  }
+
   await writeDb(db);
   res.json({ 
     success: true, 
     adminPassword: db.adminPassword,
     maxFutureWeeks: db.maxFutureWeeks,
     regolamento: db.regolamento,
-    events: db.events
+    events: db.events,
+    quotaAmount: db.quotaAmount,
+    iban: db.iban,
+    ibanHolder: db.ibanHolder,
+    paypalUrl: db.paypalUrl,
+    satispayUrl: db.satispayUrl
   });
 });
 
@@ -624,7 +675,7 @@ app.get('/api/members', (req, res) => {
 
 // POST a new member
 app.post('/api/members', async (req, res) => {
-  const { name, coachId } = req.body;
+  const { name, coachId, quotaAmount } = req.body;
   if (!name || name.trim().length === 0) {
     return res.status(400).json({ error: 'Il nome del socio è richiesto.' });
   }
@@ -660,7 +711,8 @@ app.post('/api/members', async (req, res) => {
       [nextYM]: false   // subsequent month set to unpaid
     },
     coachId: coachId || undefined,
-    registrationMonth: currentYM
+    registrationMonth: currentYM,
+    quotaAmount: quotaAmount !== undefined ? Number(quotaAmount) : undefined
   };
 
   db.members.push(newMember);
@@ -671,7 +723,7 @@ app.post('/api/members', async (req, res) => {
 // PUT (edit) a member name or toggle payments
 app.put('/api/members/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, payments, coachId } = req.body;
+  const { name, payments, coachId, quotaAmount } = req.body;
   
   const db = readDb();
   if (!db.members) db.members = [];
@@ -692,6 +744,10 @@ app.put('/api/members/:id', async (req, res) => {
       return res.status(400).json({ error: 'Un altro socio ha già questo nome.' });
     }
     db.members[memberIdx].name = normalized;
+  }
+
+  if (quotaAmount !== undefined) {
+    db.members[memberIdx].quotaAmount = quotaAmount !== null ? Number(quotaAmount) : undefined;
   }
   
   if (payments !== undefined) {
@@ -1235,6 +1291,138 @@ app.delete('/api/bookings/:id', async (req, res) => {
   db.bookings = db.bookings.filter(b => b.id !== id);
   await writeDb(db);
   res.json({ success: true });
+});
+
+// --- PAYMENTS API ---
+// Lazy-loaded Stripe initializer
+let stripeClient: any = null;
+function getStripeInstance() {
+  if (!stripeClient) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      return null;
+    }
+    // Lazy require stripe to prevent crash on startup if missing
+    const Stripe = require('stripe');
+    stripeClient = new Stripe(key);
+  }
+  return stripeClient;
+}
+
+// Create a Stripe checkout session or fallback to simulated flow
+app.post('/api/payments/create-checkout-session', async (req, res) => {
+  const { memberId, monthKey } = req.body;
+  if (!memberId || !monthKey) {
+    return res.status(400).json({ error: 'memberId and monthKey are required' });
+  }
+
+  const db = readDb();
+  const member = db.members?.find(m => m.id === memberId);
+  if (!member) {
+    return res.status(404).json({ error: 'Socio non trovato.' });
+  }
+
+  const stripe = getStripeInstance();
+  const amount = member.quotaAmount !== undefined ? member.quotaAmount : (db.quotaAmount !== undefined ? db.quotaAmount : 30);
+
+  if (stripe) {
+    try {
+      const itMonths = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+      const [year, month] = monthKey.split('-');
+      const monthLabel = `${itMonths[parseInt(month, 10) - 1]} ${year}`;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'eur',
+              product_data: {
+                name: `Quota Club - ${monthLabel}`,
+                description: `Ricarica abbonamento socio ${member.name} per il mese di ${monthLabel}`,
+              },
+              unit_amount: amount * 100, // in cents
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${req.headers.origin || 'http://localhost:3000'}?payment_session_id={CHECKOUT_SESSION_ID}&payment_status=success&payment_member_id=${memberId}&payment_month_key=${monthKey}`,
+        cancel_url: `${req.headers.origin || 'http://localhost:3000'}?payment_status=cancelled`,
+        metadata: {
+          memberId,
+          monthKey,
+        },
+      });
+
+      return res.json({ url: session.url, isSimulated: false });
+    } catch (err: any) {
+      console.error('Error creating Stripe checkout session:', err);
+      return res.status(500).json({ error: 'Errore durante la creazione della sessione Stripe: ' + err.message });
+    }
+  } else {
+    // Return simulated info
+    return res.json({ isSimulated: true, amount });
+  }
+});
+
+// Verify completed Stripe checkout session
+app.post('/api/payments/verify-checkout-session', async (req, res) => {
+  const { sessionId, memberId, monthKey } = req.body;
+  if (!sessionId || !memberId || !monthKey) {
+    return res.status(400).json({ error: 'Missing parameters for verification' });
+  }
+
+  const stripe = getStripeInstance();
+  if (!stripe) {
+    return res.status(400).json({ error: 'Stripe non configurato sul server.' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status === 'paid') {
+      const db = readDb();
+      const memberIdx = db.members?.findIndex(m => m.id === memberId);
+      if (memberIdx !== undefined && memberIdx !== -1 && db.members) {
+        db.members[memberIdx].payments = {
+          ...(db.members[memberIdx].payments || {}),
+          [monthKey]: true,
+        };
+        await writeDb(db);
+        return res.json({ success: true, member: db.members[memberIdx] });
+      }
+      return res.status(404).json({ error: 'Socio non trovato durante la verifica.' });
+    } else {
+      return res.status(400).json({ error: 'Il pagamento per questa sessione non è andato a buon fine.' });
+    }
+  } catch (err: any) {
+    console.error('Error verifying Stripe checkout session:', err);
+    return res.status(500).json({ error: 'Errore di verifica: ' + err.message });
+  }
+});
+
+// Directly confirm simulated payment
+app.post('/api/payments/confirm-simulated', async (req, res) => {
+  const { memberId, monthKey, paymentMethod } = req.body;
+  if (!memberId || !monthKey) {
+    return res.status(400).json({ error: 'memberId and monthKey are required' });
+  }
+
+  const db = readDb();
+  if (!db.members) db.members = [];
+
+  const memberIdx = db.members.findIndex(m => m.id === memberId);
+  if (memberIdx === -1) {
+    return res.status(404).json({ error: 'Socio non trovato.' });
+  }
+
+  db.members[memberIdx].payments = {
+    ...(db.members[memberIdx].payments || {}),
+    [monthKey]: true,
+  };
+
+  await writeDb(db);
+  res.json({ success: true, member: db.members[memberIdx] });
 });
 
 // Export app for serverless environments (e.g., Vercel)
