@@ -1477,7 +1477,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       
       {/* 1. Header Banner */}
-      <header className="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 shadow-xs sticky top-0 z-30">
+      <header className="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 shadow-xs relative z-30">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           
           {/* Logo & Brand */}

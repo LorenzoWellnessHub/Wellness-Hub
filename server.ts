@@ -5,7 +5,7 @@ import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Memb
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
