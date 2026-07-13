@@ -78,3 +78,14 @@ export interface EventItem {
   description?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  senderName: string;
+  senderId: string; // "admin" or coachId
+  recipientId: 'all' | string; // 'all' or a specific coachId
+  timestamp: number;
+  readBy: string[]; // List of coachIds who have read it
+}
+

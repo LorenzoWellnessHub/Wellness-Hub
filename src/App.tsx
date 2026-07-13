@@ -30,9 +30,10 @@ import {
   Mail,
   Phone,
   UserCheck,
-  Crown
+  Crown,
+  Bell
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem } from './types';
+import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification } from './types';
 
 export default function App() {
   // Navigation & context states
@@ -47,7 +48,7 @@ export default function App() {
   // Members & Weeks persistence states
   const [members, setMembers] = useState<Member[]>([]);
   const [maxFutureWeeks, setMaxFutureWeeks] = useState<number>(2);
-  const [adminMgmtTab, setAdminMgmtTab] = useState<'coaches' | 'members' | 'settings'>('coaches');
+  const [adminMgmtTab, setAdminMgmtTab] = useState<'coaches' | 'members' | 'settings' | 'notifications'>('coaches');
   const [newMemberName, setNewMemberName] = useState<string>('');
   const [newMemberCoachId, setNewMemberCoachId] = useState<string>('');
   const [newMemberQuota, setNewMemberQuota] = useState<string>('');
@@ -65,6 +66,14 @@ export default function App() {
   const [newIbanHolder, setNewIbanHolder] = useState<string>('');
   const [newPaypalUrl, setNewPaypalUrl] = useState<string>('');
   const [newSatispayUrl, setNewSatispayUrl] = useState<string>('');
+
+  // Notifications states
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
+  const [newNotificationTitle, setNewNotificationTitle] = useState<string>('');
+  const [newNotificationMessage, setNewNotificationMessage] = useState<string>('');
+  const [newNotificationRecipientId, setNewNotificationRecipientId] = useState<string>('all');
+  const [isSendingNotification, setIsSendingNotification] = useState<boolean>(false);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -270,6 +279,13 @@ export default function App() {
       if (regResponse.ok) {
         const regData = await regResponse.json();
         setPendingRegistrations(regData || []);
+      }
+
+      // Fetch notifications
+      const notificationsResponse = await fetch('/api/notifications');
+      if (notificationsResponse.ok) {
+        const notifData = await notificationsResponse.json();
+        setNotifications(notifData || []);
       }
 
       // Restores the logged in coach from localStorage if found
@@ -1421,6 +1437,93 @@ export default function App() {
     }
   };
 
+  // Send a new notification
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNotificationTitle.trim() || !newNotificationMessage.trim()) {
+      alert('Titolo e messaggio sono obbligatori.');
+      return;
+    }
+
+    setIsSendingNotification(true);
+    setErrorMessage('');
+    try {
+      const sender = isAdminMode 
+        ? { id: 'admin', name: 'Amministratore' } 
+        : (coaches.find(c => c.id === currentCoachId) || { id: currentCoachId || 'coach', name: 'Coach' });
+
+      const response = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newNotificationTitle.trim(),
+          message: newNotificationMessage.trim(),
+          senderName: sender.name,
+          senderId: sender.id,
+          recipientId: newNotificationRecipientId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore durante l\'invio della notifica.');
+      }
+
+      await fetchData();
+      setNewNotificationTitle('');
+      setNewNotificationMessage('');
+      setNewNotificationRecipientId('all');
+      setSuccessMessage('Notifica inviata con successo!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile inviare la notifica.');
+    } finally {
+      setIsSendingNotification(false);
+    }
+  };
+
+  // Mark notification as read
+  const handleMarkAsRead = async (notificationId: string) => {
+    if (!currentCoachId) return;
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coachId: currentCoachId })
+      });
+      if (response.ok) {
+        setNotifications(prev => prev.map(n => {
+          if (n.id === notificationId) {
+            const readBy = n.readBy || [];
+            if (!readBy.includes(currentCoachId)) {
+              return { ...n, readBy: [...readBy, currentCoachId] };
+            }
+          }
+          return n;
+        }));
+      }
+    } catch (err) {
+      console.error('Error marking notification as read:', err);
+    }
+  };
+
+  // Delete a notification
+  const handleDeleteNotification = async (notificationId: string) => {
+    if (!window.confirm('Sei sicuro di voler eliminare questa notifica?')) return;
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Errore durante l\'eliminazione della notifica.');
+      }
+      await fetchData();
+      setSuccessMessage('Notifica eliminata con successo.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile eliminare la notifica.');
+    }
+  };
+
   // Coach style lookup mapper
   const getCoachColorClasses = (color: string) => {
     const map: { [key: string]: { bg: string, text: string, border: string, ring: string, solid: string, lightText: string, hover: string } } = {
@@ -1670,6 +1773,18 @@ export default function App() {
   const totalConfirmedCount = summaries.reduce((acc, s) => acc + s.confirmedCount, 0) + corpoBookings.length;
   const totalReserveCount = summaries.reduce((acc, s) => acc + s.reserveCount, 0);
 
+  // Notifications filtering & unread count calculations
+  const coachNotifications = notifications.filter(n => {
+    if (isAdminMode) return true;
+    if (!currentCoachId) return false;
+    return n.recipientId === 'all' || n.recipientId === currentCoachId;
+  });
+
+  const unreadCount = coachNotifications.filter(n => {
+    if (!currentCoachId) return false;
+    return !n.readBy || !n.readBy.includes(currentCoachId);
+  }).length;
+
   // Active coach total bookings this week
   const getCoachWeeklyConfirmedCount = (coachId: string) => {
     let count = 0;
@@ -1819,6 +1934,27 @@ export default function App() {
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>Gestione</span>
+                </button>
+              )}
+
+              {/* Notification Bell Icon */}
+              {(isLoggedIn || isAdminMode) && (
+                <button
+                  id="btn-notifications-toggle"
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className={`p-2 rounded-xl transition-all relative cursor-pointer ${
+                    isNotificationsOpen 
+                      ? 'bg-slate-200 text-slate-800' 
+                      : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 border border-slate-200 shadow-2xs'
+                  }`}
+                  title="Centro Notifiche"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-600 text-white font-black text-[9px] w-4.5 h-4.5 rounded-full flex items-center justify-center border-2 border-white ring-1 ring-red-350 animate-bounce">
+                      {unreadCount}
+                    </span>
+                  )}
                 </button>
               )}
 
@@ -2692,6 +2828,17 @@ export default function App() {
               >
                 ⚙️ Impostazioni Generali
               </button>
+              <button
+                type="button"
+                onClick={() => setAdminMgmtTab('notifications')}
+                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer ${
+                  adminMgmtTab === 'notifications'
+                    ? 'border-emerald-600 text-emerald-700 font-extrabold'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                🔔 Notifiche Coach
+              </button>
             </div>
 
             {/* Tab Content: 1. COACHES */}
@@ -3158,6 +3305,165 @@ export default function App() {
                   Salva Impostazioni Amministrative
                 </button>
               </form>
+            )}
+
+            {/* Tab Content: 4. NOTIFICATIONS */}
+            {adminMgmtTab === 'notifications' && (
+              <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
+                {/* Form to Send Notification */}
+                <div className="space-y-4">
+                  <form onSubmit={handleSendNotification} className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200/80">
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-200/50 pb-2">
+                      <span>📢</span> Invia Nuova Notifica ai Coach
+                    </h3>
+
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                        Destinatario Notifica
+                      </label>
+                      <select
+                        value={newNotificationRecipientId}
+                        onChange={(e) => setNewNotificationRecipientId(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                      >
+                        <option value="all">📢 Tutti i Coach (Messaggio di Gruppo)</option>
+                        {coaches.map(c => (
+                          <option key={c.id} value={c.id}>👤 Solo a: {c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                        Titolo Notifica
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Es. Nuova procedura prenotazioni / Chiusura straordinaria"
+                        value={newNotificationTitle}
+                        onChange={(e) => setNewNotificationTitle(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                        Messaggio / Comunicazione
+                      </label>
+                      <textarea
+                        required
+                        rows={4}
+                        placeholder="Inserisci il testo dettagliato della comunicazione..."
+                        value={newNotificationMessage}
+                        onChange={(e) => setNewNotificationMessage(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSendingNotification}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-lg transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>✉️</span> {isSendingNotification ? 'Invio in corso...' : 'Invia Notifica Ora'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* History of Sent Notifications */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50/50 p-5 rounded-xl border border-slate-200/80 flex flex-col h-full min-h-[400px]">
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-200/50 pb-2 mb-3">
+                      <span>📜</span> Registro Notifiche Inviate
+                    </h3>
+
+                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 italic text-xs">
+                          Nessuna notifica precedentemente inviata.
+                        </div>
+                      ) : (
+                        [...notifications]
+                          .sort((a, b) => b.timestamp - a.timestamp)
+                          .map(n => {
+                            const recipientCoach = coaches.find(c => c.id === n.recipientId);
+                            const recipientLabel = n.recipientId === 'all' 
+                              ? 'Tutti i Coach' 
+                              : (recipientCoach ? recipientCoach.name : 'Socio Sconosciuto');
+
+                            const readByCoaches = (n.readBy || [])
+                              .map(id => coaches.find(c => c.id === id)?.name)
+                              .filter(Boolean) as string[];
+
+                            return (
+                              <div key={n.id} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-3xs flex flex-col justify-between gap-2.5 hover:border-slate-300 transition-all text-left relative">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteNotification(n.id)}
+                                  className="absolute top-3.5 right-3.5 text-slate-300 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
+                                  title="Elimina notifica"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                                
+                                <div className="space-y-1 pr-6">
+                                  <div className="flex items-center gap-1.5 flex-wrap text-[9px] font-bold text-slate-400">
+                                    <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">
+                                      A: {recipientLabel}
+                                    </span>
+                                    <span>•</span>
+                                    <span>
+                                      {new Date(n.timestamp).toLocaleDateString('it-IT')} {new Date(n.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <h4 className="text-xs font-bold text-slate-800 leading-snug">
+                                    {n.title}
+                                  </h4>
+                                  <p className="text-[10.5px] text-slate-500 leading-relaxed whitespace-pre-line">
+                                    {n.message}
+                                  </p>
+                                </div>
+
+                                <div className="border-t border-slate-100 pt-2 flex flex-col gap-1">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                                    Stato Lettura:
+                                  </span>
+                                  {n.recipientId === 'all' ? (
+                                    <div className="flex flex-wrap gap-1 items-center">
+                                      {readByCoaches.length === 0 ? (
+                                        <span className="text-[10px] text-slate-400 italic">Nessun coach ha ancora letto</span>
+                                      ) : (
+                                        <>
+                                          <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
+                                            Letto da ({readByCoaches.length}):
+                                          </span>
+                                          <span className="text-[10px] font-semibold text-slate-600">
+                                            {readByCoaches.join(', ')}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1 text-[10px]">
+                                      {n.readBy && n.readBy.includes(n.recipientId) ? (
+                                        <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                          <Check className="w-3.5 h-3.5" /> Letto
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 font-medium italic">Non ancora letto</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </section>
         )}
@@ -6260,7 +6566,135 @@ export default function App() {
         </div>
       )})}
 
+      {/* Drawer: NOTIFICATION CENTER */}
+      {isNotificationsOpen && (
+        <div className="fixed inset-0 z-[100] overflow-hidden">
+          {/* Overlay backdrop */}
+          <div 
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-fade-in"
+            onClick={() => setIsNotificationsOpen(false)}
+          />
 
+          <div className="absolute inset-y-0 right-0 max-w-full flex">
+            {/* Slide-over panel */}
+            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col h-full animate-slide-in text-left">
+              {/* Header */}
+              <div className="px-6 py-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-black text-slate-900 text-sm tracking-tight uppercase">
+                      Centro Notifiche
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      Hai {unreadCount} {unreadCount === 1 ? 'notifica non letta' : 'notifiche non lette'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationsOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* List body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {coachNotifications.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 text-lg">
+                      📭
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-xs">Nessuna notifica</p>
+                      <p className="text-[10px] text-slate-400 max-w-[200px] mt-1 leading-normal">
+                        Non ci sono ancora messaggi o comunicazioni per te.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  [...coachNotifications]
+                    .sort((a, b) => b.timestamp - a.timestamp)
+                    .map(n => {
+                      const isRead = !currentCoachId || (n.readBy && n.readBy.includes(currentCoachId));
+                      return (
+                        <div 
+                          key={n.id}
+                          onClick={() => {
+                            if (!isRead && currentCoachId) {
+                              handleMarkAsRead(n.id);
+                            }
+                          }}
+                          className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
+                            isRead 
+                              ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50' 
+                              : 'bg-emerald-50/40 border-emerald-200 text-slate-900 hover:bg-emerald-50/60 ring-1 ring-emerald-100'
+                          }`}
+                        >
+                          {!isRead && (
+                            <span className="absolute top-4 right-4 w-2.5 h-2.5 bg-emerald-600 rounded-full border-2 border-white ring-1 ring-emerald-300" />
+                          )}
+                          <div className="pr-4 space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                da {n.senderName}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {new Date(n.timestamp).toLocaleDateString('it-IT')} {new Date(n.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {n.recipientId === 'all' && (
+                                <>
+                                  <span className="text-slate-300">•</span>
+                                  <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                                    Tutti i Coach
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <h4 className="text-xs font-bold font-sans tracking-tight leading-snug">
+                              {n.title}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 leading-relaxed whitespace-pre-line pt-0.5">
+                              {n.message}
+                            </p>
+                          </div>
+                          
+                          {/* Mark as read button if unread */}
+                          {!isRead && (
+                            <div className="mt-2.5 pt-2 border-t border-emerald-100/60 flex justify-end">
+                              <button
+                                type="button"
+                                className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Check className="w-3 h-3" /> Segna come letto
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 bg-slate-50 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationsOpen(false)}
+                  className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-xs cursor-pointer text-center"
+                >
+                  Chiudi Centro Notifiche
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

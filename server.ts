@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -29,6 +29,7 @@ interface DbState {
   ibanHolder?: string;
   paypalUrl?: string;
   satispayUrl?: string;
+  notifications?: AppNotification[];
 }
 
 let cachedState: DbState | null = null;
@@ -121,6 +122,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.events) {
     state.events = [];
+  }
+  if (!state.notifications) {
+    state.notifications = [];
   }
   
   // Auto-populate members from bookings if empty
@@ -629,6 +633,93 @@ app.post('/api/coach-registrations/:id/reject', async (req, res) => {
   // Remove the registration
   db.pendingCoachRegistrations.splice(regIdx, 1);
   
+  await writeDb(db);
+
+  res.json({ success: true });
+});
+
+// GET all notifications
+app.get('/api/notifications', (req, res) => {
+  const db = readDb();
+  res.json(db.notifications || []);
+});
+
+// POST a new notification
+app.post('/api/notifications', async (req, res) => {
+  const { title, message, senderName, senderId, recipientId } = req.body;
+  if (!title || !message) {
+    return res.status(400).json({ error: 'Titolo e messaggio sono obbligatori.' });
+  }
+
+  const db = readDb();
+  if (!db.notifications) {
+    db.notifications = [];
+  }
+
+  const newNotification: AppNotification = {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    title: title.trim(),
+    message: message.trim(),
+    senderName: senderName ? senderName.trim() : 'Admin',
+    senderId: senderId || 'admin',
+    recipientId: recipientId || 'all',
+    timestamp: Date.now(),
+    readBy: []
+  };
+
+  db.notifications.push(newNotification);
+  await writeDb(db);
+
+  res.json(newNotification);
+});
+
+// POST mark notification as read
+app.post('/api/notifications/:id/read', async (req, res) => {
+  const { id } = req.params;
+  const { coachId } = req.body;
+
+  if (!coachId) {
+    return res.status(400).json({ error: 'coachId è obbligatorio.' });
+  }
+
+  const db = readDb();
+  if (!db.notifications) {
+    db.notifications = [];
+  }
+
+  const notifIdx = db.notifications.findIndex(n => n.id === id);
+  if (notifIdx === -1) {
+    return res.status(404).json({ error: 'Notifica non trovata.' });
+  }
+
+  const notif = db.notifications[notifIdx];
+  if (!notif.readBy) {
+    notif.readBy = [];
+  }
+
+  if (!notif.readBy.includes(coachId)) {
+    notif.readBy.push(coachId);
+    await writeDb(db);
+  }
+
+  res.json(notif);
+});
+
+// DELETE a notification (useful for admin or sender)
+app.delete('/api/notifications/:id', async (req, res) => {
+  const { id } = req.params;
+  const db = readDb();
+  
+  if (!db.notifications) {
+    db.notifications = [];
+  }
+
+  const notifIdx = db.notifications.findIndex(n => n.id === id);
+  if (notifIdx === -1) {
+    return res.status(404).json({ error: 'Notifica non trovata.' });
+  }
+
+  db.notifications.splice(notifIdx, 1);
   await writeDb(db);
 
   res.json({ success: true });
