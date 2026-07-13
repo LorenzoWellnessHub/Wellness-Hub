@@ -17,9 +17,7 @@ const storageBucket = cleanVal(process.env.FIREBASE_STORAGE_BUCKET) || cleanVal(
 const messagingSenderId = cleanVal(process.env.FIREBASE_MESSAGING_SENDER_ID) || cleanVal(process.env.messagingSenderId) || config.messagingSenderId;
 const appId = cleanVal(process.env.FIREBASE_APP_ID) || cleanVal(process.env.appId) || config.appId;
 
-// On Vercel, default to the standard "(default)" database to match standard Firebase deployments,
-// unless overridden in environment variables.
-const defaultDbId = process.env.VERCEL ? '(default)' : (config.firestoreDatabaseId || '(default)');
+const defaultDbId = config.firestoreDatabaseId || '(default)';
 export const dbId = cleanVal(process.env.FIREBASE_DATABASE_ID) || cleanVal(process.env.firestoreDatabaseId) || defaultDbId;
 
 export const firebaseConfig = {
