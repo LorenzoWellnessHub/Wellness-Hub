@@ -190,7 +190,7 @@ function readDb(): DbState {
   return cachedState;
 }
 
-function writeDb(state: DbState) {
+async function writeDb(state: DbState): Promise<void> {
   cachedState = state;
   lastLoadTime = Date.now(); // Mark as loaded right now with the latest state
   
@@ -207,10 +207,13 @@ function writeDb(state: DbState) {
     console.error('Error launching write local backup:', e);
   }
 
-  // Save to Firestore asynchronously in the background (non-blocking)
-  saveDbToFirestore(state).catch(err => {
+  // Save to Firestore and await it!
+  try {
+    await saveDbToFirestore(state);
+  } catch (err) {
     console.error('Error writing state to Firestore:', err);
-  });
+    throw err;
+  }
 }
 
 // Middleware: Intercept all API routes and ensure Firestore data is loaded
@@ -319,7 +322,7 @@ app.get('/api/admin/config', (req, res) => {
 });
 
 // POST update admin configuration
-app.post('/api/admin/config', (req, res) => {
+app.post('/api/admin/config', async (req, res) => {
   const { adminPassword, maxFutureWeeks, regolamento, events } = req.body;
   const db = readDb();
   
@@ -342,7 +345,7 @@ app.post('/api/admin/config', (req, res) => {
     db.events = events;
   }
 
-  writeDb(db);
+  await writeDb(db);
   res.json({ 
     success: true, 
     adminPassword: db.adminPassword,
@@ -359,7 +362,7 @@ app.get('/api/coaches', (req, res) => {
 });
 
 // POST a new coach
-app.post('/api/coaches', (req, res) => {
+app.post('/api/coaches', async (req, res) => {
   const { name, color, pin, isAdmin } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Name is required' });
@@ -408,12 +411,12 @@ app.post('/api/coaches', (req, res) => {
 
   db.members.push(newMember);
 
-  writeDb(db);
+  await writeDb(db);
   res.json(newCoach);
 });
 
 // PUT (edit) a coach
-app.put('/api/coaches/:id', (req, res) => {
+app.put('/api/coaches/:id', async (req, res) => {
   const { id } = req.params;
   const { name, color, pin, isAdmin, phone, email, sponsorName, status, acceptedRules } = req.body;
   
@@ -433,7 +436,7 @@ app.put('/api/coaches/:id', (req, res) => {
   if (status !== undefined) db.coaches[coachIdx].status = status;
   if (acceptedRules !== undefined) db.coaches[coachIdx].acceptedRules = acceptedRules;
   
-  writeDb(db);
+  await writeDb(db);
   res.json(db.coaches[coachIdx]);
 });
 
@@ -444,7 +447,7 @@ app.get('/api/coach-registrations', (req, res) => {
 });
 
 // POST register a new coach (public registration form)
-app.post('/api/coach-registrations', (req, res) => {
+app.post('/api/coach-registrations', async (req, res) => {
   const { name, phone, email, sponsorName } = req.body;
   
   if (!name || !name.trim()) {
@@ -487,13 +490,13 @@ app.post('/api/coach-registrations', (req, res) => {
   };
 
   db.pendingCoachRegistrations.push(newReg);
-  writeDb(db);
+  await writeDb(db);
 
   res.json({ success: true, registration: newReg });
 });
 
 // POST approve a coach registration
-app.post('/api/coach-registrations/:id/approve', (req, res) => {
+app.post('/api/coach-registrations/:id/approve', async (req, res) => {
   const { id } = req.params;
   const { color, pin } = req.body;
 
@@ -555,13 +558,13 @@ app.post('/api/coach-registrations/:id/approve', (req, res) => {
   // Remove the registration
   db.pendingCoachRegistrations.splice(regIdx, 1);
   
-  writeDb(db);
+  await writeDb(db);
 
   res.json({ success: true, coach: newCoach });
 });
 
 // POST reject a coach registration
-app.post('/api/coach-registrations/:id/reject', (req, res) => {
+app.post('/api/coach-registrations/:id/reject', async (req, res) => {
   const { id } = req.params;
 
   const db = readDb();
@@ -575,13 +578,13 @@ app.post('/api/coach-registrations/:id/reject', (req, res) => {
   // Remove the registration
   db.pendingCoachRegistrations.splice(regIdx, 1);
   
-  writeDb(db);
+  await writeDb(db);
 
   res.json({ success: true });
 });
 
 // POST or update slot restriction
-app.post('/api/slots/restrictions', (req, res) => {
+app.post('/api/slots/restrictions', async (req, res) => {
   const { slotId, allowedCoachIds } = req.body;
   if (!slotId) {
     return res.status(400).json({ error: 'slotId is required' });
@@ -598,18 +601,18 @@ app.post('/api/slots/restrictions', (req, res) => {
     db.slotRestrictions[slotId] = allowedCoachIds;
   }
 
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true, slotRestrictions: db.slotRestrictions });
 });
 
 // DELETE a coach
-app.delete('/api/coaches/:id', (req, res) => {
+app.delete('/api/coaches/:id', async (req, res) => {
   const { id } = req.params;
   const db = readDb();
   db.coaches = db.coaches.filter(c => c.id !== id);
   // Cascade delete bookings
   db.bookings = db.bookings.filter(b => b.coachId !== id);
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true });
 });
 
@@ -620,7 +623,7 @@ app.get('/api/members', (req, res) => {
 });
 
 // POST a new member
-app.post('/api/members', (req, res) => {
+app.post('/api/members', async (req, res) => {
   const { name, coachId } = req.body;
   if (!name || name.trim().length === 0) {
     return res.status(400).json({ error: 'Il nome del socio è richiesto.' });
@@ -661,12 +664,12 @@ app.post('/api/members', (req, res) => {
   };
 
   db.members.push(newMember);
-  writeDb(db);
+  await writeDb(db);
   res.json(newMember);
 });
 
 // PUT (edit) a member name or toggle payments
-app.put('/api/members/:id', (req, res) => {
+app.put('/api/members/:id', async (req, res) => {
   const { id } = req.params;
   const { name, payments, coachId } = req.body;
   
@@ -723,18 +726,18 @@ app.put('/api/members/:id', (req, res) => {
     }
   }
   
-  writeDb(db);
+  await writeDb(db);
   res.json(db.members[memberIdx]);
 });
 
 // DELETE a member
-app.delete('/api/members/:id', (req, res) => {
+app.delete('/api/members/:id', async (req, res) => {
   const { id } = req.params;
   const db = readDb();
   if (db.members) {
     db.members = db.members.filter(m => m.id !== id);
   }
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true });
 });
 
@@ -745,7 +748,7 @@ app.get('/api/slots', (req, res) => {
 });
 
 // POST a custom slot (weekly flexible slots)
-app.post('/api/slots', (req, res) => {
+app.post('/api/slots', async (req, res) => {
   const { treatmentType, date, time } = req.body;
   if (!treatmentType || !date || !time) {
     return res.status(400).json({ error: 'Missing slot details' });
@@ -767,18 +770,18 @@ app.post('/api/slots', (req, res) => {
     isCustom: true
   };
   db.slots.push(newSlot);
-  writeDb(db);
+  await writeDb(db);
   res.json(newSlot);
 });
 
 // DELETE a custom slot
-app.delete('/api/slots/:id', (req, res) => {
+app.delete('/api/slots/:id', async (req, res) => {
   const { id } = req.params;
   const db = readDb();
   db.slots = db.slots.filter(s => s.id !== id);
   // Cascade delete bookings
   db.bookings = db.bookings.filter(b => b.slotId !== id);
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true });
 });
 
@@ -940,7 +943,7 @@ app.get('/api/bookings', (req, res) => {
 });
 
 // POST a new booking
-app.post('/api/bookings', (req, res) => {
+app.post('/api/bookings', async (req, res) => {
   const { slotId, coachId, guestName, notes } = req.body;
   if (!slotId || !coachId || !guestName) {
     return res.status(400).json({ error: 'Missing booking details' });
@@ -1068,7 +1071,7 @@ app.post('/api/bookings', (req, res) => {
   };
 
   db.bookings.push(newBooking);
-  writeDb(db);
+  await writeDb(db);
 
   // Recompute with new booking and return the specific computed booking
   const allComputed = computeBookingsWithStatus(db.bookings);
@@ -1077,7 +1080,7 @@ app.post('/api/bookings', (req, res) => {
 });
 
 // PUT (edit) a booking
-app.put('/api/bookings/:id', (req, res) => {
+app.put('/api/bookings/:id', async (req, res) => {
   const { id } = req.params;
   const { guestName, notes, slotId, requesterCoachId } = req.body;
 
@@ -1206,7 +1209,7 @@ app.put('/api/bookings/:id', (req, res) => {
   if (notes !== undefined) db.bookings[bookingIdx].notes = notes;
   if (slotId !== undefined) db.bookings[bookingIdx].slotId = slotId;
 
-  writeDb(db);
+  await writeDb(db);
 
   const allComputed = computeBookingsWithStatus(db.bookings);
   const updated = allComputed.find(b => b.id === id);
@@ -1214,7 +1217,7 @@ app.put('/api/bookings/:id', (req, res) => {
 });
 
 // DELETE a booking
-app.delete('/api/bookings/:id', (req, res) => {
+app.delete('/api/bookings/:id', async (req, res) => {
   const { id } = req.params;
   const { coachId } = req.query;
 
@@ -1230,7 +1233,7 @@ app.delete('/api/bookings/:id', (req, res) => {
   }
 
   db.bookings = db.bookings.filter(b => b.id !== id);
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true });
 });
 
