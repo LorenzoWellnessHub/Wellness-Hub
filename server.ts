@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -30,6 +30,7 @@ interface DbState {
   paypalUrl?: string;
   satispayUrl?: string;
   notifications?: AppNotification[];
+  utilities?: UtilityItem[];
 }
 
 let cachedState: DbState | null = null;
@@ -125,6 +126,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.notifications) {
     state.notifications = [];
+  }
+  if (!state.utilities) {
+    state.utilities = [];
   }
   
   // Auto-populate members from bookings if empty
@@ -722,6 +726,59 @@ app.delete('/api/notifications/:id', async (req, res) => {
   db.notifications.splice(notifIdx, 1);
   await writeDb(db);
 
+  res.json({ success: true });
+});
+
+// --- UTILITIES API ---
+// GET all utilities
+app.get('/api/utilities', (req, res) => {
+  const db = readDb();
+  res.json(db.utilities || []);
+});
+
+// POST a new utility item
+app.post('/api/utilities', async (req, res) => {
+  const { category, title, type, url, fileName } = req.body;
+  if (!category || !title || !type || !url) {
+    return res.status(400).json({ error: 'Campi obbligatori mancanti.' });
+  }
+
+  const db = readDb();
+  if (!db.utilities) {
+    db.utilities = [];
+  }
+
+  const newUtility: UtilityItem = {
+    id: `utility_${Date.now()}`,
+    category,
+    title,
+    type,
+    url,
+    fileName,
+    uploadedAt: Date.now()
+  };
+
+  db.utilities.push(newUtility);
+  await writeDb(db);
+  res.json(newUtility);
+});
+
+// DELETE a utility item
+app.delete('/api/utilities/:id', async (req, res) => {
+  const { id } = req.params;
+  const db = readDb();
+  
+  if (!db.utilities) {
+    db.utilities = [];
+  }
+
+  const exists = db.utilities.some(u => u.id === id);
+  if (!exists) {
+    return res.status(404).json({ error: 'Elemento non trovato.' });
+  }
+
+  db.utilities = db.utilities.filter(u => u.id !== id);
+  await writeDb(db);
   res.json({ success: true });
 });
 

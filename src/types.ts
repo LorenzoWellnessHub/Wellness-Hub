@@ -89,3 +89,14 @@ export interface AppNotification {
   readBy: string[]; // List of coachIds who have read it
 }
 
+export interface UtilityItem {
+  id: string;
+  category: 'locandine' | 'startup' | 'listino' | 'regolamento';
+  title: string;
+  type: 'link' | 'file';
+  url: string; // URL link or base64 data string
+  fileName?: string;
+  uploadedAt: number;
+}
+
+

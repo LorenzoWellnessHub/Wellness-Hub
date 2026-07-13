@@ -31,9 +31,15 @@ import {
   Phone,
   UserCheck,
   Crown,
-  Bell
+  Bell,
+  Menu,
+  Link,
+  FileText,
+  Image,
+  ExternalLink,
+  Upload
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification } from './types';
+import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem } from './types';
 
 export default function App() {
   // Navigation & context states
@@ -76,6 +82,17 @@ export default function App() {
   const [isSendingNotification, setIsSendingNotification] = useState<boolean>(false);
   const [justSentNotification, setJustSentNotification] = useState<AppNotification | null>(null);
   const [expandedWhatsAppNotifIds, setExpandedWhatsAppNotifIds] = useState<Record<string, boolean>>({});
+
+  // Utilities states
+  const [utilities, setUtilities] = useState<UtilityItem[]>([]);
+  const [selectedUtilityCategory, setSelectedUtilityCategory] = useState<'locandine' | 'startup' | 'listino' | 'regolamento' | null>(null);
+  const [isUtilityDropdownOpen, setIsUtilityDropdownOpen] = useState<boolean>(false);
+  const [isAddUtilityModalOpen, setIsAddUtilityModalOpen] = useState<boolean>(false);
+  const [newUtilityTitle, setNewUtilityTitle] = useState<string>('');
+  const [newUtilityType, setNewUtilityType] = useState<'link' | 'file'>('link');
+  const [newUtilityUrl, setNewUtilityUrl] = useState<string>('');
+  const [newUtilityFileName, setNewUtilityFileName] = useState<string>('');
+  const [isSavingUtility, setIsSavingUtility] = useState<boolean>(false);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -288,6 +305,13 @@ export default function App() {
       if (notificationsResponse.ok) {
         const notifData = await notificationsResponse.json();
         setNotifications(notifData || []);
+      }
+
+      // Fetch utilities
+      const utilitiesResponse = await fetch('/api/utilities');
+      if (utilitiesResponse.ok) {
+        const utilData = await utilitiesResponse.json();
+        setUtilities(utilData || []);
       }
 
       // Restores the logged in coach from localStorage if found
@@ -1502,6 +1526,112 @@ export default function App() {
     }
   };
 
+  // Utilities Handlers
+  const handleUtilityFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 800 * 1024) {
+      alert('Attenzione: Il caricamento diretto è limitato a file minori di 800KB per ottimizzare lo spazio cloud. Per documenti pesanti o PDF completi, ti consigliamo vivamente di caricarli su Google Drive o Dropbox e incollare il Link qui!');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setNewUtilityUrl(reader.result);
+        setNewUtilityFileName(file.name);
+      }
+    };
+    reader.onerror = () => {
+      alert('Errore durante la lettura del file.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddUtility = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdminMode) {
+      alert("Solo l'amministratore può inserire o modificare elementi.");
+      return;
+    }
+    if (!newUtilityTitle.trim()) {
+      alert('Il titolo è obbligatorio.');
+      return;
+    }
+    if (!selectedUtilityCategory) {
+      alert('La categoria è obbligatoria.');
+      return;
+    }
+
+    let finalUrl = newUtilityUrl.trim();
+
+    if (newUtilityType === 'file') {
+      if (!finalUrl) {
+        alert('Carica prima un file o una foto.');
+        return;
+      }
+    } else {
+      if (!finalUrl) {
+        alert('Inserisci un link URL valido.');
+        return;
+      }
+    }
+
+    setIsSavingUtility(true);
+    try {
+      const response = await fetch('/api/utilities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: selectedUtilityCategory,
+          title: newUtilityTitle.trim(),
+          type: newUtilityType,
+          url: finalUrl,
+          fileName: newUtilityType === 'file' ? newUtilityFileName : undefined
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Impossibile salvare l\'elemento.');
+      }
+
+      await fetchData();
+      setNewUtilityTitle('');
+      setNewUtilityType('link');
+      setNewUtilityUrl('');
+      setNewUtilityFileName('');
+      setIsAddUtilityModalOpen(false);
+      setSuccessMessage('Utility aggiunta con successo!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante il salvataggio.');
+    } finally {
+      setIsSavingUtility(false);
+    }
+  };
+
+  const handleDeleteUtility = async (id: string) => {
+    if (!isAdminMode) {
+      alert("Solo l'amministratore può eliminare elementi.");
+      return;
+    }
+    if (!confirm('Sei sicuro di voler eliminare questo elemento?')) return;
+    try {
+      const response = await fetch(`/api/utilities/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Errore durante l\'eliminazione.');
+      }
+      await fetchData();
+      setSuccessMessage('Elemento rimosso con successo!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante l\'eliminazione.');
+    }
+  };
+
   // Mark notification as read
   const handleMarkAsRead = async (notificationId: string) => {
     if (!currentCoachId) return;
@@ -1958,25 +2088,65 @@ export default function App() {
                 </button>
               )}
 
-              {/* Notification Bell Icon */}
+              {/* Utility Dropdown (3 lines / hamburger menu) */}
               {(isLoggedIn || isAdminMode) && (
-                <button
-                  id="btn-notifications-toggle"
-                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  className={`p-2 rounded-xl transition-all relative cursor-pointer ${
-                    isNotificationsOpen 
-                      ? 'bg-slate-200 text-slate-800' 
-                      : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 border border-slate-200 shadow-2xs'
-                  }`}
-                  title="Centro Notifiche"
-                >
-                  <Bell className="w-4 h-4" />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-600 text-white font-black text-[9px] w-4.5 h-4.5 rounded-full flex items-center justify-center border-2 border-white ring-1 ring-red-350 animate-bounce">
-                      {unreadCount}
-                    </span>
+                <div className="relative">
+                  <button
+                    id="btn-utilities-toggle"
+                    onClick={() => setIsUtilityDropdownOpen(!isUtilityDropdownOpen)}
+                    className={`p-2 rounded-xl transition-all relative cursor-pointer border ${
+                      isUtilityDropdownOpen 
+                        ? 'bg-slate-200 text-slate-800 border-slate-300' 
+                        : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 border-slate-200 shadow-2xs'
+                    }`}
+                    title="Utility (Locandine, Start Up, Listino)"
+                  >
+                    <Menu className="w-4 h-4" />
+                  </button>
+                  {isUtilityDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-2.5 z-[110] text-slate-800 animate-scale-up">
+                      <div className="px-3.5 py-1.5 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                        📁 Utility e Risorse
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedUtilityCategory('locandine');
+                          setIsUtilityDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                      >
+                        <span className="text-sm">🖼️</span> Locandine
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedUtilityCategory('startup');
+                          setIsUtilityDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                      >
+                        <span className="text-sm">🚀</span> Start Up
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedUtilityCategory('listino');
+                          setIsUtilityDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                      >
+                        <span className="text-sm">💰</span> Listino prezzi aggiornato
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedUtilityCategory('regolamento');
+                          setIsUtilityDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                      >
+                        <span className="text-sm">📄</span> Regolamento del Club
+                      </button>
+                    </div>
                   )}
-                </button>
+                </div>
               )}
 
               <div className="h-5 w-px bg-slate-300 mx-1" />
@@ -2494,81 +2664,6 @@ export default function App() {
           );
         })()}
 
-        {/* COLLAPSIBLE REGOLAMENTO ACCORDION */}
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs mb-4">
-          <button
-            onClick={() => {
-              setShowRegolamentoAccordion(!showRegolamentoAccordion);
-              if (!showRegolamentoAccordion) {
-                setEditRegolamentoValue(regolamento);
-              }
-            }}
-            className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100/80 transition-colors text-left font-bold text-sm text-slate-800"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📄</span>
-              <span>Regolamento del Club</span>
-            </div>
-            <span className="text-xs text-slate-400 font-semibold">
-              {showRegolamentoAccordion ? 'Nascondi ▲' : 'Mostra ▾'}
-            </span>
-          </button>
-          
-          {showRegolamentoAccordion && (
-            <div className="p-5 border-t border-slate-150 bg-white space-y-4 animate-slide-down">
-              {isEditingRegolamento ? (
-                <div className="space-y-3">
-                  <label className="block text-xs font-bold text-slate-500 uppercase">Scrivi il regolamento del club:</label>
-                  <textarea
-                    rows={8}
-                    value={editRegolamentoValue}
-                    onChange={(e) => setEditRegolamentoValue(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium bg-slate-50 text-slate-800"
-                    placeholder="Scrivi qui le regole..."
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={actionLoading}
-                      onClick={() => handleSaveRegolamento(editRegolamentoValue)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
-                    >
-                      {actionLoading ? 'Salvataggio...' : 'Salva Modifiche'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsEditingRegolamento(false);
-                        setEditRegolamentoValue(regolamento);
-                      }}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
-                    >
-                      Annulla
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4 text-left">
-                  <div className="text-slate-700 text-xs leading-relaxed whitespace-pre-line font-medium bg-slate-50 p-4 rounded-xl border border-slate-150">
-                    {regolamento || 'Nessun regolamento configurato.'}
-                  </div>
-                  {isAdminMode && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditRegolamentoValue(regolamento);
-                        setIsEditingRegolamento(true);
-                      }}
-                      className="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
-                    >
-                      ✏️ Modifica Regolamento (Admin)
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
 
         {/* COLLAPSIBLE EVENTI ACCORDION */}
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs mb-4">
@@ -3330,234 +3425,158 @@ export default function App() {
 
             {/* Tab Content: 4. NOTIFICATIONS */}
             {adminMgmtTab === 'notifications' && (
-              <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
-                {/* Form to Send Notification */}
+              <div className="grid md:grid-cols-2 gap-6 animate-fade-in text-left">
+                {/* Draft Composer */}
                 <div className="space-y-4">
-                  <form onSubmit={handleSendNotification} className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200/80">
+                  <div className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200/80">
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-200/50 pb-2">
-                      <span>📢</span> Invia Nuova Notifica ai Coach
+                      <span>📱</span> Prepara Comunicazione WhatsApp
                     </h3>
 
-                    <div className="space-y-1 text-left">
+                    <div className="space-y-1">
                       <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                        Destinatario Notifica
+                        Destinatario Principale
                       </label>
                       <select
                         value={newNotificationRecipientId}
                         onChange={(e) => setNewNotificationRecipientId(e.target.value)}
-                        className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
                       >
                         <option value="all">📢 Tutti i Coach (Messaggio di Gruppo)</option>
-                        {coaches.map(c => (
+                        {coaches.filter(c => !c.isAdmin).map(c => (
                           <option key={c.id} value={c.id}>👤 Solo a: {c.name}</option>
                         ))}
                       </select>
                     </div>
 
-                    <div className="space-y-1 text-left">
+                    <div className="space-y-1">
                       <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                        Titolo Notifica
+                        Titolo Comunicazione
                       </label>
                       <input
                         type="text"
-                        required
-                        placeholder="Es. Nuova procedura prenotazioni / Chiusura straordinaria"
+                        placeholder="Es. Sostituzione Orari Sabato / Chiusura Straordinaria"
                         value={newNotificationTitle}
                         onChange={(e) => setNewNotificationTitle(e.target.value)}
-                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-slate-800"
                       />
                     </div>
 
-                    <div className="space-y-1 text-left">
+                    <div className="space-y-1">
                       <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                        Messaggio / Comunicazione
+                        Testo Dettagliato
                       </label>
                       <textarea
-                        required
-                        rows={4}
-                        placeholder="Inserisci il testo dettagliato della comunicazione..."
+                        rows={5}
+                        placeholder="Inserisci il testo della comunicazione..."
                         value={newNotificationMessage}
                         onChange={(e) => setNewNotificationMessage(e.target.value)}
-                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-slate-700"
                       />
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={isSendingNotification}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-lg transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span>✉️</span> {isSendingNotification ? 'Invio in corso...' : 'Invia Notifica Ora'}
-                    </button>
-                  </form>
+                    <div className="text-[10px] text-slate-400 bg-slate-100/50 p-2.5 rounded-lg leading-relaxed">
+                      💡 <strong>Come Funziona:</strong> Compila i campi sopra. A destra vedrai la preview in tempo reale. Potrai inviare istantaneamente il messaggio sul gruppo WhatsApp dei Coach o nelle chat individuali.
+                    </div>
+                  </div>
                 </div>
 
-                {/* History of Sent Notifications */}
+                {/* Dispatch & Preview Center */}
                 <div className="space-y-4">
-                  <div className="bg-slate-50/50 p-5 rounded-xl border border-slate-200/80 flex flex-col h-full min-h-[400px]">
+                  <div className="bg-slate-50/50 p-5 rounded-xl border border-slate-200/80 flex flex-col h-full">
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-200/50 pb-2 mb-3">
-                      <span>📜</span> Registro Notifiche Inviate
+                      <span>👀</span> Preview e Invio Rapido
                     </h3>
 
-                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-                      {notifications.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400 italic text-xs">
-                          Nessuna notifica precedentemente inviata.
+                    {/* WhatsApp Bubble Preview */}
+                    <div className="bg-slate-100 rounded-xl p-4 border border-slate-200 shadow-inner flex-1 flex flex-col justify-between min-h-[180px] max-h-[300px] overflow-y-auto mb-4 relative bg-[url('https://user-images.githubusercontent.com/15075759/145196467-3320539e-1090-4835-8ec0-22e6900da202.png')] bg-cover">
+                      <div className="bg-[#dcf8c6] text-slate-800 rounded-lg p-3 text-xs shadow-xs max-w-[85%] self-end relative border border-[#c4e5a9]/50">
+                        <span className="font-bold block text-[#075e54] text-[10px] uppercase tracking-wide mb-1">
+                          Anteprima Messaggio
+                        </span>
+                        <p className="font-bold font-sans">📢 {newNotificationTitle || '(Inserisci un titolo...)'}</p>
+                        <p className="whitespace-pre-line mt-1.5 leading-relaxed text-slate-700">
+                          {newNotificationMessage || '(Inserisci il testo dettagliato...)'}
+                        </p>
+                        <span className="text-[8px] text-slate-400 block text-right mt-1.5">
+                          {new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} ✓✓
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="space-y-3">
+                      {newNotificationRecipientId === 'all' ? (
+                        <div className="space-y-3">
+                          <a
+                            href={getWhatsAppGroupLink(newNotificationTitle || '(Messaggio)', newNotificationMessage || '(Testo)')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-center"
+                          >
+                            <span>👥</span> Invia sul gruppo WhatsApp
+                          </a>
+
+                          <div className="border-t border-slate-200 pt-3">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-slate-400 mb-2">
+                              Oppure invia ai singoli coach:
+                            </span>
+                            <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                              {coaches.filter(c => !c.isAdmin).length === 0 ? (
+                                <span className="text-xs text-slate-400 italic">Nessun coach configurato.</span>
+                              ) : (
+                                coaches.filter(c => !c.isAdmin).map(c => {
+                                  const link = c.phone ? getWhatsAppLink(c.phone, newNotificationTitle || '(Messaggio)', newNotificationMessage || '(Testo)') : '';
+                                  return (
+                                    <div key={c.id} className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-150 text-xs shadow-3xs">
+                                      <span className="font-bold text-slate-700">{c.name}</span>
+                                      {link ? (
+                                        <a
+                                          href={link}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[10px] px-3 py-1 rounded-md transition-all border border-emerald-200 flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <span>💬</span> Invia
+                                        </a>
+                                      ) : (
+                                        <span className="text-[10px] text-red-500 italic font-semibold">Senza telefono</span>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        [...notifications]
-                          .sort((a, b) => b.timestamp - a.timestamp)
-                          .map(n => {
-                            const recipientCoach = coaches.find(c => c.id === n.recipientId);
-                            const recipientLabel = n.recipientId === 'all' 
-                              ? 'Tutti i Coach' 
-                              : (recipientCoach ? recipientCoach.name : 'Socio Sconosciuto');
-
-                            const readByCoaches = (n.readBy || [])
-                              .map(id => coaches.find(c => c.id === id)?.name)
-                              .filter(Boolean) as string[];
-
+                        <div className="space-y-2">
+                          {(() => {
+                            const selectedCoach = coaches.find(c => c.id === newNotificationRecipientId);
+                            if (!selectedCoach) {
+                              return <span className="text-xs text-slate-400 italic">Nessun destinatario selezionato.</span>;
+                            }
+                            const waLink = selectedCoach.phone ? getWhatsAppLink(selectedCoach.phone, newNotificationTitle || '(Messaggio)', newNotificationMessage || '(Testo)') : '';
                             return (
-                              <div key={n.id} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-3xs flex flex-col justify-between gap-2.5 hover:border-slate-300 transition-all text-left relative">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteNotification(n.id)}
-                                  className="absolute top-3.5 right-3.5 text-slate-300 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
-                                  title="Elimina notifica"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                                
-                                <div className="space-y-1 pr-6">
-                                  <div className="flex items-center gap-1.5 flex-wrap text-[9px] font-bold text-slate-400">
-                                    <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">
-                                      A: {recipientLabel}
-                                    </span>
-                                    <span>•</span>
-                                    <span>
-                                      {new Date(n.timestamp).toLocaleDateString('it-IT')} {new Date(n.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                              <div className="space-y-2">
+                                {waLink ? (
+                                  <a
+                                    href={waLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-center"
+                                  >
+                                    <span>💬</span> Invia a {selectedCoach.name} su WhatsApp
+                                  </a>
+                                ) : (
+                                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-700">
+                                    ⚠️ Il coach <strong>{selectedCoach.name}</strong> non ha inserito un numero di cellulare nelle sue impostazioni.
                                   </div>
-                                  <h4 className="text-xs font-bold text-slate-800 leading-snug">
-                                    {n.title}
-                                  </h4>
-                                  <p className="text-[10.5px] text-slate-500 leading-relaxed whitespace-pre-line">
-                                    {n.message}
-                                  </p>
-                                </div>
-
-                                <div className="border-t border-slate-100 pt-2 flex flex-col gap-1">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                                    Stato Lettura:
-                                  </span>
-                                  {n.recipientId === 'all' ? (
-                                    <div className="flex flex-wrap gap-1 items-center">
-                                      {readByCoaches.length === 0 ? (
-                                        <span className="text-[10px] text-slate-400 italic">Nessun coach ha ancora letto</span>
-                                      ) : (
-                                        <>
-                                          <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-                                            Letto da ({readByCoaches.length}):
-                                          </span>
-                                          <span className="text-[10px] font-semibold text-slate-600">
-                                            {readByCoaches.join(', ')}
-                                          </span>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-1 text-[10px]">
-                                      {n.readBy && n.readBy.includes(n.recipientId) ? (
-                                        <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                          <Check className="w-3.5 h-3.5" /> Letto
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-400 font-medium italic">Non ancora letto</span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="border-t border-slate-100 pt-2 flex flex-col gap-1.5">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                    <span>📱</span> Notifica WhatsApp (Push):
-                                  </span>
-                                  {n.recipientId === 'all' ? (
-                                    <div className="space-y-1.5">
-                                      <a
-                                        href={getWhatsAppGroupLink(n.title, n.message)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all w-full justify-center cursor-pointer border border-emerald-700/15 shadow-3xs text-center"
-                                      >
-                                        <span>👥</span> Invia sul gruppo
-                                      </a>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => setExpandedWhatsAppNotifIds(prev => ({ ...prev, [n.id]: !prev[n.id] }))}
-                                        className="text-[10px] text-emerald-700 font-extrabold hover:text-emerald-800 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1.5 rounded-lg transition-all w-full justify-center cursor-pointer border border-emerald-200/50 shadow-3xs"
-                                      >
-                                        <span>💬</span> {expandedWhatsAppNotifIds[n.id] ? 'Nascondi Lista Coach' : 'Oppure invia ai Singoli Coach'}
-                                      </button>
-                                      
-                                      {expandedWhatsAppNotifIds[n.id] && (
-                                        <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-200/65 space-y-1.5 max-h-[180px] overflow-y-auto">
-                                          {coaches.filter(c => !c.isAdmin).length === 0 ? (
-                                            <span className="text-[10px] text-slate-400 italic block">Nessun coach registrato</span>
-                                          ) : (
-                                            coaches.filter(c => !c.isAdmin).map(c => {
-                                              const waLink = c.phone ? getWhatsAppLink(c.phone, n.title, n.message) : '';
-                                              return (
-                                                <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] border-b border-slate-200/40 pb-1.5 last:border-0 last:pb-0">
-                                                  <span className="font-bold text-slate-700 truncate">{c.name}</span>
-                                                  {waLink ? (
-                                                    <a
-                                                      href={waLink}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[9px] px-2 py-1 rounded-md transition-all shadow-3xs flex items-center gap-1 cursor-pointer"
-                                                    >
-                                                      <span>💬</span> WhatsApp
-                                                    </a>
-                                                  ) : (
-                                                    <span className="text-[9px] text-red-500 italic">Senza tel.</span>
-                                                  )}
-                                                </div>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      {recipientCoach ? (
-                                        recipientCoach.phone ? (
-                                          <a
-                                            href={getWhatsAppLink(recipientCoach.phone, n.title, n.message)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-lg transition-all shadow-3xs w-full justify-center cursor-pointer border border-emerald-700/10"
-                                          >
-                                            <span>💬</span> Invia a {recipientCoach.name} su WhatsApp
-                                          </a>
-                                        ) : (
-                                          <span className="text-[10px] text-red-500 italic block">
-                                            Il coach non ha inserito il numero di cellulare.
-                                          </span>
-                                        )
-                                      ) : (
-                                        <span className="text-[10px] text-slate-400 italic block">
-                                          Coach non trovato.
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                )}
                               </div>
                             );
-                          })
+                          })()}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -6791,6 +6810,394 @@ export default function App() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: UTILITY CATEGORIZED DISPLAY */}
+      {selectedUtilityCategory && (() => {
+        const categoryLabels: Record<string, string> = {
+          locandine: 'Locandine',
+          startup: 'Start Up',
+          listino: 'Listino prezzi aggiornato',
+          regolamento: 'Regolamento del Club'
+        };
+        const categoryIcons: Record<string, string> = {
+          locandine: '🖼️',
+          startup: '🚀',
+          listino: '💰',
+          regolamento: '📄'
+        };
+        
+        const filteredUtilities = utilities.filter(u => u.category === selectedUtilityCategory);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in text-left">
+            <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] animate-scale-up">
+              {/* Header */}
+              <div className="px-6 py-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between rounded-t-2xl">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">{categoryIcons[selectedUtilityCategory]}</span>
+                  <div>
+                    <h3 className="font-display font-black text-slate-900 text-sm tracking-tight uppercase">
+                      {categoryLabels[selectedUtilityCategory]}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      Risorse e utility condivise per gli operatori
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedUtilityCategory(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1 cursor-pointer hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {selectedUtilityCategory === 'regolamento' && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                      📝 Testo del Regolamento Ufficiale
+                    </h4>
+                    {isEditingRegolamento ? (
+                      <div className="space-y-3">
+                        <textarea
+                          rows={10}
+                          value={editRegolamentoValue}
+                          onChange={(e) => setEditRegolamentoValue(e.target.value)}
+                          className="w-full text-xs border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium bg-white text-slate-800"
+                          placeholder="Scrivi qui le regole..."
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={() => handleSaveRegolamento(editRegolamentoValue)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
+                          >
+                            {actionLoading ? 'Salvataggio...' : 'Salva Regolamento'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingRegolamento(false);
+                              setEditRegolamentoValue(regolamento);
+                            }}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="text-slate-700 text-xs leading-relaxed whitespace-pre-line font-medium bg-white p-4 rounded-xl border border-slate-150 shadow-3xs max-h-96 overflow-y-auto">
+                          {regolamento || 'Nessun regolamento configurato.'}
+                        </div>
+                        {isAdminMode && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRegolamentoValue(regolamento);
+                              setIsEditingRegolamento(true);
+                            }}
+                            className="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-sm"
+                          >
+                            ✏️ Modifica Testo Regolamento
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Section title for attachments if in 'regolamento' category */}
+                {selectedUtilityCategory === 'regolamento' && (
+                  <div className="border-t border-slate-200 pt-4 flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      📎 Documenti o Link Allegati al Regolamento
+                    </h4>
+                    {isAdminMode && (
+                      <button
+                        onClick={() => setIsAddUtilityModalOpen(true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Inserisci Allegato/Link
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Admin insert trigger for other categories */}
+                {isAdminMode && selectedUtilityCategory !== 'regolamento' && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setIsAddUtilityModalOpen(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Inserisci {selectedUtilityCategory === 'listino' ? 'Listino' : selectedUtilityCategory === 'locandine' ? 'Locandina' : 'Risorsa'}
+                    </button>
+                  </div>
+                )}
+
+                {filteredUtilities.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400 italic text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    Nessuna risorsa presente in questa sezione.
+                    {isAdminMode && (
+                      <p className="text-[11px] text-slate-500 mt-2 not-italic font-bold">
+                        Clicca su "Inserisci" in alto per aggiungere un documento, foto o link.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {filteredUtilities.map(item => {
+                      const isImage = item.type === 'file' && (item.url.startsWith('data:image/') || item.url.includes('.jpg') || item.url.includes('.png'));
+                      return (
+                        <div key={item.id} className="border border-slate-200 rounded-xl bg-white p-4 flex flex-col justify-between gap-3 shadow-3xs hover:border-slate-300 hover:shadow-2xs transition-all relative">
+                          {/* Title and Icon */}
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="p-1.5 rounded-lg bg-slate-100 text-slate-500">
+                                  {item.type === 'file' ? (
+                                    isImage ? <Image className="w-4 h-4 text-emerald-600" /> : <FileText className="w-4 h-4 text-blue-600" />
+                                  ) : (
+                                    <Link className="w-4 h-4 text-amber-600" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                  {item.type === 'file' ? 'File' : 'Link'}
+                                </span>
+                              </div>
+
+                              {/* Admin Delete */}
+                              {isAdminMode && (
+                                <button
+                                  onClick={() => handleDeleteUtility(item.id)}
+                                  className="text-slate-300 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                                  title="Elimina"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <h4 className="text-xs font-bold text-slate-800 leading-snug line-clamp-2">
+                              {item.title}
+                            </h4>
+
+                            {/* Image Preview */}
+                            {isImage && (
+                              <div className="border border-slate-150 rounded-lg overflow-hidden bg-slate-50 h-28 flex items-center justify-center">
+                                <img 
+                                  src={item.url} 
+                                  alt={item.title} 
+                                  className="h-full w-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+
+                            {/* Document File Name info */}
+                            {item.type === 'file' && !isImage && (
+                              <div className="text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-100 font-mono truncate">
+                                📁 {item.fileName || 'documento.pdf'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Button */}
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>
+                              {new Date(item.uploadedAt).toLocaleDateString('it-IT')}
+                            </span>
+                            
+                            {item.type === 'file' ? (
+                              <a
+                                href={item.url}
+                                download={item.fileName || 'risorsa'}
+                                className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <Upload className="w-3 h-3 rotate-180" /> Scarica
+                              </a>
+                            ) : (
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <ExternalLink className="w-3 h-3" /> Visita
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end rounded-b-2xl">
+                <button
+                  onClick={() => setSelectedUtilityCategory(null)}
+                  className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
+                >
+                  Chiudi
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal: ADD UTILITY */}
+      {isAddUtilityModalOpen && selectedUtilityCategory && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[120] animate-fade-in text-left">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-display font-bold text-sm uppercase text-slate-900 tracking-tight flex items-center gap-1.5">
+                <Plus className="w-5 h-5 text-emerald-600" /> Aggiungi Elemento
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsAddUtilityModalOpen(false);
+                  setNewUtilityTitle('');
+                  setNewUtilityUrl('');
+                  setNewUtilityFileName('');
+                }}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddUtility} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">
+                  Titolo / Nome Risorsa
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Es. Brochure Luglio 2026, Listino Aggiornato"
+                  value={newUtilityTitle}
+                  onChange={(e) => setNewUtilityTitle(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Tipo di Risorsa
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUtilityType('link');
+                      setNewUtilityUrl('');
+                      setNewUtilityFileName('');
+                    }}
+                    className={`py-2 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+                      newUtilityType === 'link'
+                        ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
+                        : 'border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    🔗 Link / URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUtilityType('file');
+                      setNewUtilityUrl('');
+                      setNewUtilityFileName('');
+                    }}
+                    className={`py-2 text-xs font-bold border rounded-lg transition-all cursor-pointer ${
+                      newUtilityType === 'file'
+                        ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
+                        : 'border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    📁 Carica File
+                  </button>
+                </div>
+              </div>
+
+              {newUtilityType === 'link' ? (
+                <div className="space-y-1 animate-fade-in">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">
+                    Incolla l'URL del Link (Google Drive, Dropbox, ecc.)
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://drive.google.com/..."
+                    value={newUtilityUrl}
+                    onChange={(e) => setNewUtilityUrl(e.target.value)}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-600"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1 animate-fade-in">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">
+                    Seleziona File / Foto (Max 800KB)
+                  </label>
+                  <div className="border border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100/80 p-5 transition-all text-center relative cursor-pointer">
+                    <input
+                      type="file"
+                      onChange={handleUtilityFileChange}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      accept="image/*,application/pdf,.doc,.docx"
+                    />
+                    <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                    {newUtilityFileName ? (
+                      <div className="space-y-0.5">
+                        <p className="text-[11px] font-bold text-emerald-600 truncate max-w-[250px] mx-auto">
+                          ✅ {newUtilityFileName}
+                        </p>
+                        <p className="text-[9px] text-slate-400">Clicca o trascina per sostituire</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-600">Trascina o Clicca per caricare</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Foto, PDF, Word (Max 800KB)</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-slate-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddUtilityModalOpen(false);
+                    setNewUtilityTitle('');
+                    setNewUtilityUrl('');
+                    setNewUtilityFileName('');
+                  }}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer text-center"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingUtility}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/10"
+                >
+                  {isSavingUtility ? 'Salvataggio...' : 'Salva Elemento'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
