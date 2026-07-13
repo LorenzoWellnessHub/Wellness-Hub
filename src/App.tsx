@@ -74,6 +74,8 @@ export default function App() {
   const [newNotificationMessage, setNewNotificationMessage] = useState<string>('');
   const [newNotificationRecipientId, setNewNotificationRecipientId] = useState<string>('all');
   const [isSendingNotification, setIsSendingNotification] = useState<boolean>(false);
+  const [justSentNotification, setJustSentNotification] = useState<AppNotification | null>(null);
+  const [expandedWhatsAppNotifIds, setExpandedWhatsAppNotifIds] = useState<Record<string, boolean>>({});
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -1437,6 +1439,17 @@ export default function App() {
     }
   };
 
+  // Helper to format WhatsApp links correctly
+  const getWhatsAppLink = (phone: string, title: string, message: string) => {
+    if (!phone) return '';
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 10 && cleaned.startsWith('3')) {
+      cleaned = '39' + cleaned;
+    }
+    const fullText = `📢 *${title}*\n\n${message}`;
+    return `https://wa.me/${cleaned}?text=${encodeURIComponent(fullText)}`;
+  };
+
   // Send a new notification
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1468,11 +1481,14 @@ export default function App() {
         throw new Error('Errore durante l\'invio della notifica.');
       }
 
+      const createdNotif = await response.json();
       await fetchData();
       setNewNotificationTitle('');
       setNewNotificationMessage('');
       setNewNotificationRecipientId('all');
       setSuccessMessage('Notifica inviata con successo!');
+      // Store the recently created notification to prompt for WhatsApp forwarding
+      setJustSentNotification(createdNotif);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Impossibile inviare la notifica.');
@@ -3452,6 +3468,75 @@ export default function App() {
                                         </span>
                                       ) : (
                                         <span className="text-slate-400 font-medium italic">Non ancora letto</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="border-t border-slate-100 pt-2 flex flex-col gap-1.5">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                    <span>📱</span> Notifica WhatsApp (Push):
+                                  </span>
+                                  {n.recipientId === 'all' ? (
+                                    <div className="space-y-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedWhatsAppNotifIds(prev => ({ ...prev, [n.id]: !prev[n.id] }))}
+                                        className="text-[10px] text-emerald-700 font-extrabold hover:text-emerald-800 flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1.5 rounded-lg transition-all w-full justify-center cursor-pointer border border-emerald-200/50 shadow-3xs"
+                                      >
+                                        <span>💬</span> {expandedWhatsAppNotifIds[n.id] ? 'Nascondi Lista Coach' : 'Invia via WhatsApp ai Singoli Coach'}
+                                      </button>
+                                      
+                                      {expandedWhatsAppNotifIds[n.id] && (
+                                        <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-200/65 space-y-1.5 max-h-[180px] overflow-y-auto">
+                                          {coaches.filter(c => !c.isAdmin).length === 0 ? (
+                                            <span className="text-[10px] text-slate-400 italic block">Nessun coach registrato</span>
+                                          ) : (
+                                            coaches.filter(c => !c.isAdmin).map(c => {
+                                              const waLink = c.phone ? getWhatsAppLink(c.phone, n.title, n.message) : '';
+                                              return (
+                                                <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] border-b border-slate-200/40 pb-1.5 last:border-0 last:pb-0">
+                                                  <span className="font-bold text-slate-700 truncate">{c.name}</span>
+                                                  {waLink ? (
+                                                    <a
+                                                      href={waLink}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[9px] px-2 py-1 rounded-md transition-all shadow-3xs flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                      <span>💬</span> WhatsApp
+                                                    </a>
+                                                  ) : (
+                                                    <span className="text-[9px] text-red-500 italic">Senza tel.</span>
+                                                  )}
+                                                </div>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      {recipientCoach ? (
+                                        recipientCoach.phone ? (
+                                          <a
+                                            href={getWhatsAppLink(recipientCoach.phone, n.title, n.message)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-lg transition-all shadow-3xs w-full justify-center cursor-pointer border border-emerald-700/10"
+                                          >
+                                            <span>💬</span> Invia a {recipientCoach.name} su WhatsApp
+                                          </a>
+                                        ) : (
+                                          <span className="text-[10px] text-red-500 italic block">
+                                            Il coach non ha inserito il numero di cellulare.
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 italic block">
+                                          Coach non trovato.
+                                        </span>
                                       )}
                                     </div>
                                   )}
@@ -6691,6 +6776,112 @@ export default function App() {
                   Chiudi Centro Notifiche
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: WHATSAPP NOTIFICATION FORWARDER PROMPT */}
+      {justSentNotification && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in text-left">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-display font-black text-slate-900 text-sm tracking-tight uppercase flex items-center gap-1.5">
+                  <span>📱</span> Invia anche su WhatsApp
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Fai apparire la comunicazione come notifica push sul telefono dei Coach!
+                </p>
+              </div>
+              <button 
+                onClick={() => setJustSentNotification(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
+              <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-black uppercase tracking-wide">
+                Messaggio Inviato In-App:
+              </span>
+              <div className="mt-1">
+                <h4 className="text-xs font-bold text-slate-800">{justSentNotification.title}</h4>
+                <p className="text-[10.5px] text-slate-500 line-clamp-3 mt-1 leading-normal whitespace-pre-line">
+                  {justSentNotification.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <p className="text-xs font-bold text-slate-600">
+                Seleziona i destinatari per inviare via WhatsApp:
+              </p>
+
+              {justSentNotification.recipientId === 'all' ? (
+                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                  {coaches.filter(c => !c.isAdmin).length === 0 ? (
+                    <span className="text-[11px] text-slate-400 italic">Nessun coach a cui inviare.</span>
+                  ) : (
+                    coaches.filter(c => !c.isAdmin).map(c => {
+                      const waLink = c.phone ? getWhatsAppLink(c.phone, justSentNotification.title, justSentNotification.message) : '';
+                      return (
+                        <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 border border-slate-150 text-xs">
+                          <span className="font-bold text-slate-700">{c.name}</span>
+                          {waLink ? (
+                            <a
+                              href={waLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-md transition-all shadow-3xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>💬</span> WhatsApp
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-red-500 italic">Nessun num.</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {(() => {
+                    const rc = coaches.find(c => c.id === justSentNotification.recipientId);
+                    if (!rc) return <span className="text-xs text-slate-400">Coach destinatario non trovato.</span>;
+                    if (!rc.phone) {
+                      return (
+                        <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-[11px] text-red-700">
+                          ⚠️ Il coach <strong>{rc.name}</strong> non ha configurato un numero di telefono. Non puoi inviare su WhatsApp.
+                        </div>
+                      );
+                    }
+                    return (
+                      <a
+                        href={getWhatsAppLink(rc.phone, justSentNotification.title, justSentNotification.message)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                        onClick={() => setJustSentNotification(null)}
+                      >
+                        <span>💬</span> Invia a {rc.name} su WhatsApp Ora
+                      </a>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setJustSentNotification(null)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs px-4 py-2 rounded-lg transition-all cursor-pointer"
+              >
+                Chiudi
+              </button>
             </div>
           </div>
         </div>
