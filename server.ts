@@ -7,7 +7,8 @@ import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const DB_PATH = process.env.VERCEL
   ? '/tmp/db.json'
