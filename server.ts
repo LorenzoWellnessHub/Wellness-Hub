@@ -28,7 +28,8 @@ interface DbState {
 
 let cachedState: DbState | null = null;
 let dbLoadPromise: Promise<void> | null = null;
-let pendingWritePromise: Promise<void> = Promise.resolve();
+let lastLoadTime = 0;
+const CACHE_TTL_MS = 10000; // 10 seconds cache to reduce Firestore GET requests
 
 // Synchronous-looking read helper for local fallback and initialization
 function readLocalDb(): DbState {
@@ -146,7 +147,8 @@ function normalizeDbState(state: any): DbState {
 
 // Ensure state is loaded from Firestore
 async function ensureDbLoaded(): Promise<void> {
-  if (cachedState) {
+  const now = Date.now();
+  if (cachedState && (now - lastLoadTime < CACHE_TTL_MS)) {
     return;
   }
   if (dbLoadPromise) {
@@ -159,11 +161,13 @@ async function ensureDbLoaded(): Promise<void> {
       const stateFromFirestore = await loadDbFromFirestore();
       if (stateFromFirestore) {
         cachedState = normalizeDbState(stateFromFirestore);
+        lastLoadTime = Date.now();
         console.log('Successfully loaded and normalized state from Firestore');
       } else {
         console.log('No state in Firestore. Seeding database state...');
         const initialLocalState = readLocalDb();
         cachedState = initialLocalState;
+        lastLoadTime = Date.now();
         await saveDbToFirestore(initialLocalState);
         console.log('Seeded Firestore with initial state');
       }
@@ -171,7 +175,6 @@ async function ensureDbLoaded(): Promise<void> {
       console.error('Error loading state from Firestore, falling back to local file:', err);
       cachedState = readLocalDb();
     } finally {
-      // Clear load promise so subsequent non-concurrent requests can trigger a reload if cache is cleared
       dbLoadPromise = null;
     }
   })();
@@ -189,6 +192,7 @@ function readDb(): DbState {
 
 function writeDb(state: DbState) {
   cachedState = state;
+  lastLoadTime = Date.now(); // Mark as loaded right now with the latest state
   
   // Update local JSON backup file asynchronously
   try {
@@ -203,90 +207,17 @@ function writeDb(state: DbState) {
     console.error('Error launching write local backup:', e);
   }
 
-  // Queue write to Firestore
-  pendingWritePromise = saveDbToFirestore(state).catch(err => {
+  // Save to Firestore asynchronously in the background (non-blocking)
+  saveDbToFirestore(state).catch(err => {
     console.error('Error writing state to Firestore:', err);
   });
 }
 
-// Middleware: Intercept all API routes, force reloading from Firestore, and await pending writes
+// Middleware: Intercept all API routes and ensure Firestore data is loaded
 app.use(async (req, res, next) => {
   if (req.path.startsWith('/api/')) {
-    // Coalesce concurrent requests: only clear cache if there is no active load promise
-    if (!dbLoadPromise) {
-      cachedState = null;
-    }
     await ensureDbLoaded();
   }
-  
-  // Wrap res.json and res.send to await pending writes before responding
-  const originalJson = res.json;
-  const originalSend = res.send;
-
-  try {
-    Object.defineProperty(res, 'json', {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: function (body: any) {
-        pendingWritePromise.then(() => {
-          originalJson.call(res, body);
-        }).catch((err) => {
-          console.error('Error flushing to Firestore before res.json:', err);
-          originalJson.call(res, body);
-        });
-        return res;
-      }
-    });
-  } catch (err) {
-    console.error('Failed to override res.json via Object.defineProperty:', err);
-    try {
-      res.json = function (body: any) {
-        pendingWritePromise.then(() => {
-          originalJson.call(res, body);
-        }).catch((err) => {
-          console.error('Error flushing to Firestore before res.json:', err);
-          originalJson.call(res, body);
-        });
-        return res;
-      };
-    } catch (assignErr) {
-      console.error('Failed fallback assignment for res.json:', assignErr);
-    }
-  }
-
-  try {
-    Object.defineProperty(res, 'send', {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: function (body: any) {
-        pendingWritePromise.then(() => {
-          originalSend.call(res, body);
-        }).catch((err) => {
-          console.error('Error flushing to Firestore before res.send:', err);
-          originalSend.call(res, body);
-        });
-        return res;
-      }
-    });
-  } catch (err) {
-    console.error('Failed to override res.send via Object.defineProperty:', err);
-    try {
-      res.send = function (body: any) {
-        pendingWritePromise.then(() => {
-          originalSend.call(res, body);
-        }).catch((err) => {
-          console.error('Error flushing to Firestore before res.send:', err);
-          originalSend.call(res, body);
-        });
-        return res;
-      };
-    } catch (assignErr) {
-      console.error('Failed fallback assignment for res.send:', assignErr);
-    }
-  }
-
   next();
 });
 
