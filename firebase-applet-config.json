@@ -1,11 +1,12 @@
 {
-  "projectId": "genial-collective-xnn32",
-  "appId": "1:633704609166:web:02ca250f629576fa48e0df",
-  "apiKey": "AIzaSyB8SmTR-Gc9RSKHHh3hQlvizQu1mgnVDZA",
-  "authDomain": "genial-collective-xnn32.firebaseapp.com",
+  "projectId": "wellness-hub-c1d60",
+  "appId": "1:825472801949:web:fa7ffc809fdf64c4d48874",
+  "apiKey": "AIzaSyBnZNiSFQh2W1nYB698bvwXxcWGopxDTQE",
+  "authDomain": "wellness-hub-c1d60.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-thewellnesshub-41e05ac6-d55d-4fbd-b519-a8ac7db02694",
-  "storageBucket": "genial-collective-xnn32.firebasestorage.app",
-  "messagingSenderId": "633704609166",
+  "storageBucket": "wellness-hub-c1d60.firebasestorage.app",
+  "messagingSenderId": "825472801949",
   "measurementId": "",
-  "oAuthClientId": "633704609166-sloi118d43ites3u1rh67p8sn6riv6h6.apps.googleusercontent.com"
+  "oAuthClientId": "825472801949-dbhmj6rcb7mor4ufbv1pdjrpeh9tqss0.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }
