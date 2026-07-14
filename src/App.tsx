@@ -1172,7 +1172,17 @@ export default function App() {
   };
 
   const handleUpdateMemberQuota = async (member: Member, amount: number | undefined) => {
-    setActionLoading(true);
+    // Optimistic update
+    setMembers(prev => prev.map(m => {
+      if (m.id === member.id) {
+        return {
+          ...m,
+          quotaAmount: amount
+        };
+      }
+      return m;
+    }));
+
     setErrorMessage('');
     try {
       const response = await fetch(`/api/members/${member.id}`, {
@@ -1191,9 +1201,17 @@ export default function App() {
       setSuccessMessage(`Quota mensile aggiornata per ${member.name}.`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
+      // Revert optimistic update
+      setMembers(prev => prev.map(m => {
+        if (m.id === member.id) {
+          return {
+            ...m,
+            quotaAmount: member.quotaAmount
+          };
+        }
+        return m;
+      }));
       setErrorMessage(err.message || 'Errore durante l\'aggiornamento.');
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -1274,10 +1292,24 @@ export default function App() {
   };
 
   const handleTogglePayment = async (member: Member, ymKey: string, currentVal: boolean) => {
-    setActionLoading(true);
+    const newVal = !currentVal;
+    
+    // Optimistic update
+    setMembers(prev => prev.map(m => {
+      if (m.id === member.id) {
+        return {
+          ...m,
+          payments: {
+            ...(m.payments || {}),
+            [ymKey]: newVal
+          }
+        };
+      }
+      return m;
+    }));
+
     setErrorMessage('');
     try {
-      const newVal = !currentVal;
       const response = await fetch(`/api/members/${member.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1299,12 +1331,21 @@ export default function App() {
       }
       const updatedMember = await response.json();
       setMembers(prev => prev.map(m => m.id === member.id ? updatedMember : m));
-      setSuccessMessage(`Stato pagamento quota aggiornato per ${member.name}.`);
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
+      // Revert optimistic update
+      setMembers(prev => prev.map(m => {
+        if (m.id === member.id) {
+          return {
+            ...m,
+            payments: {
+              ...(m.payments || {}),
+              [ymKey]: currentVal
+            }
+          };
+        }
+        return m;
+      }));
       setErrorMessage(err.message || 'Errore durante l\'aggiornamento.');
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -3236,20 +3277,11 @@ export default function App() {
                                 </select>
                               </td>
                               <td className="p-3">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    placeholder={`${quotaAmount}`}
-                                    value={m.quotaAmount !== undefined && m.quotaAmount !== null ? m.quotaAmount : ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value === '' ? undefined : Number(e.target.value);
-                                      handleUpdateMemberQuota(m, val);
-                                    }}
-                                    className="w-16 text-xs bg-white border border-slate-200 rounded-lg p-1 text-center outline-none focus:ring-1 focus:ring-emerald-500 font-semibold font-mono text-slate-700"
-                                  />
-                                  <span className="text-[11px] text-slate-400 font-semibold">€</span>
-                                </div>
+                                <MemberQuotaInput
+                                  member={m}
+                                  defaultQuota={quotaAmount}
+                                  onUpdate={handleUpdateMemberQuota}
+                                />
                               </td>
                               {recentMonths.map(month => {
                                 const regMonth = getMemberRegistrationMonth(m);
@@ -7390,6 +7422,51 @@ function PendingRegistrationRow({ reg, onApprove, onReject, actionLoading }: Pen
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface MemberQuotaInputProps {
+  member: Member;
+  defaultQuota: number;
+  onUpdate: (member: Member, amount: number | undefined) => void;
+}
+
+function MemberQuotaInput({ member, defaultQuota, onUpdate }: MemberQuotaInputProps) {
+  const [localVal, setLocalVal] = useState<string>(
+    member.quotaAmount !== undefined && member.quotaAmount !== null ? String(member.quotaAmount) : ''
+  );
+
+  // Sync state if member changes from outside
+  useEffect(() => {
+    setLocalVal(member.quotaAmount !== undefined && member.quotaAmount !== null ? String(member.quotaAmount) : '');
+  }, [member.quotaAmount]);
+
+  const handleBlurOrEnter = () => {
+    const trimmed = localVal.trim();
+    const parsed = trimmed === '' ? undefined : Number(trimmed);
+    if (parsed !== member.quotaAmount) {
+      onUpdate(member, parsed);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        min="1"
+        placeholder={`${defaultQuota}`}
+        value={localVal}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={handleBlurOrEnter}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          }
+        }}
+        className="w-16 text-xs bg-white border border-slate-200 rounded-lg p-1 text-center outline-none focus:ring-1 focus:ring-emerald-500 font-semibold font-mono text-slate-700"
+      />
+      <span className="text-[11px] text-slate-400 font-semibold">€</span>
     </div>
   );
 }
