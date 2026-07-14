@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -33,6 +33,7 @@ interface DbState {
   notifications?: AppNotification[];
   utilities?: UtilityItem[];
   earnings?: OperatorEarning[];
+  cheques?: MonthlyCheque[];
 }
 
 let cachedState: DbState | null = null;
@@ -139,6 +140,9 @@ function normalizeDbState(state: any): DbState {
       ...e,
       type: e.type || 'skin'
     }));
+  }
+  if (!state.cheques) {
+    state.cheques = [];
   }
   
   // Auto-populate members from bookings if empty
@@ -1661,6 +1665,50 @@ app.delete('/api/earnings/:id', async (req, res) => {
   }
   await writeDb(db);
   res.json({ success: true, earnings: db.earnings });
+});
+
+// --- OPERATOR CHEQUES API ---
+// GET all cheques
+app.get('/api/cheques', (req, res) => {
+  const db = readDb();
+  res.json(db.cheques || []);
+});
+
+// POST or update a cheque record
+app.post('/api/cheques', async (req, res) => {
+  const { coachId, yearMonth, amount } = req.body;
+  if (!coachId || !yearMonth || amount === undefined || isNaN(Number(amount))) {
+    return res.status(400).json({ error: 'Dati di inserimento non validi.' });
+  }
+
+  const db = readDb();
+  if (!db.cheques) {
+    db.cheques = [];
+  }
+
+  const numAmount = Number(amount);
+  const existingIndex = db.cheques.findIndex(c => c.coachId === coachId && c.yearMonth === yearMonth);
+
+  if (existingIndex !== -1) {
+    if (numAmount === 0) {
+      // If amount is set to 0, we can remove it or keep it at 0
+      db.cheques[existingIndex].amount = 0;
+    } else {
+      db.cheques[existingIndex].amount = numAmount;
+    }
+    db.cheques[existingIndex].timestamp = Date.now();
+  } else {
+    db.cheques.push({
+      id: `cheque_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      coachId,
+      yearMonth,
+      amount: numAmount,
+      timestamp: Date.now()
+    });
+  }
+
+  await writeDb(db);
+  res.json({ success: true, cheques: db.cheques });
 });
 
 // Export app for serverless environments (e.g., Vercel)

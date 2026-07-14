@@ -108,4 +108,12 @@ export interface OperatorEarning {
   timestamp: number;
 }
 
+export interface MonthlyCheque {
+  id: string;
+  coachId: string;
+  yearMonth: string; // YYYY-MM
+  amount: number;
+  timestamp: number;
+}
+
 

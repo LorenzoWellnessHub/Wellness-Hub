@@ -39,7 +39,7 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning } from './types';
+import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque } from './types';
 
 export default function App() {
   // Navigation & context states
@@ -96,11 +96,17 @@ export default function App() {
 
   // Operator Earnings states
   const [earnings, setEarnings] = useState<OperatorEarning[]>([]);
+  const [cheques, setCheques] = useState<MonthlyCheque[]>([]);
   const [earningInputDate, setEarningInputDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [earningInputAmount, setEarningInputAmount] = useState<string>('');
   const [earningInputType, setEarningInputType] = useState<'skin' | 'corpo'>('skin');
   const [isSavingEarning, setIsSavingEarning] = useState<boolean>(false);
   const [isEarningPanelOpen, setIsEarningPanelOpen] = useState<boolean>(false);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [isAnnualBreakdownOpen, setIsAnnualBreakdownOpen] = useState<boolean>(false);
+  const [editingChequeMonth, setEditingChequeMonth] = useState<string | null>(null);
+  const [chequeInputAmount, setChequeInputAmount] = useState<string>('');
+  const [isSavingCheque, setIsSavingCheque] = useState<boolean>(false);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -327,6 +333,13 @@ export default function App() {
       if (earningsResponse.ok) {
         const earnData = await earningsResponse.json();
         setEarnings(earnData || []);
+      }
+
+      // Fetch monthly cheques
+      const chequesResponse = await fetch('/api/cheques');
+      if (chequesResponse.ok) {
+        const chequeData = await chequesResponse.json();
+        setCheques(chequeData || []);
       }
 
       // Restores the logged in coach from localStorage if found
@@ -1195,6 +1208,42 @@ export default function App() {
     }
   };
 
+  const handleSaveCheque = async (yearMonth: string, amount: number) => {
+    if (!currentCoachId) {
+      alert('Seleziona prima il tuo profilo operatore per inserire un assegno.');
+      return;
+    }
+    setIsSavingCheque(true);
+    try {
+      const response = await fetch('/api/cheques', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coachId: currentCoachId,
+          yearMonth,
+          amount
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore durante il salvataggio dell\'assegno.');
+      }
+
+      const result = await response.json();
+      if (result.success && result.cheques) {
+        setCheques(result.cheques);
+        setEditingChequeMonth(null);
+        setChequeInputAmount('');
+        setSuccessMessage('Importo assegno aggiornato con successo!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Errore di connessione durante il salvataggio dell\'assegno.');
+    } finally {
+      setIsSavingCheque(false);
+    }
+  };
+
   // Member & Payment Management Handlers
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1905,22 +1954,47 @@ export default function App() {
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const todayStr = `${year}-${month}-${String(today.getDate()).padStart(2, '0')}`;
+    const currentMonthStr = todayStr.substring(0, 7); // "YYYY-MM"
+
+    const currentMonthCheque = activeCoach
+      ? cheques
+          .filter(c => c.coachId === activeCoach.id && c.yearMonth === currentMonthStr)
+          .reduce((sum, c) => sum + c.amount, 0)
+      : 0;
 
     const accumulatedMonthTotal = activeCoach 
-      ? getMonthlyAccumulatedEarnings(activeCoach.id, todayStr)
+      ? getMonthlyAccumulatedEarnings(activeCoach.id, todayStr) + currentMonthCheque
       : 0;
 
     const accumulatedSkinMonthTotal = activeCoach
       ? earnings
-          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(todayStr.substring(0, 7)) && e.type === 'skin')
+          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(currentMonthStr) && e.type === 'skin')
           .reduce((sum, e) => sum + e.amount, 0)
       : 0;
 
     const accumulatedCorpoMonthTotal = activeCoach
       ? earnings
-          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(todayStr.substring(0, 7)) && e.type === 'corpo')
+          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(currentMonthStr) && e.type === 'corpo')
           .reduce((sum, e) => sum + e.amount, 0)
       : 0;
+
+    // Annual Earnings calculation for active coach
+    const activeCoachId = activeCoach?.id;
+    const currentYearStr = selectedYear.toString();
+
+    const annualEarningsSum = activeCoachId
+      ? earnings
+          .filter(e => e.coachId === activeCoachId && e.date.startsWith(currentYearStr))
+          .reduce((sum, e) => sum + e.amount, 0)
+      : 0;
+
+    const annualChequesSum = activeCoachId
+      ? cheques
+          .filter(c => c.coachId === activeCoachId && c.yearMonth.startsWith(currentYearStr))
+          .reduce((sum, c) => sum + c.amount, 0)
+      : 0;
+
+    const accumulatedYearTotal = annualEarningsSum + annualChequesSum;
 
     const coachLogs = earnings
       .filter(e => e.coachId === currentCoachId)
@@ -1928,7 +2002,12 @@ export default function App() {
 
     const adminSummary = coaches.map(c => {
       const yearMonth = todayStr.substring(0, 7);
-      const coachMonthly = getMonthlyAccumulatedEarnings(c.id, todayStr);
+      const coachMonthlyEarnings = getMonthlyAccumulatedEarnings(c.id, todayStr);
+      const coachMonthlyCheque = cheques
+        .filter(ch => ch.coachId === c.id && ch.yearMonth === yearMonth)
+        .reduce((sum, ch) => sum + ch.amount, 0);
+      const coachMonthly = coachMonthlyEarnings + coachMonthlyCheque;
+
       const coachMonthlySkin = earnings
         .filter(e => e.coachId === c.id && e.date.startsWith(yearMonth) && e.type === 'skin')
         .reduce((sum, e) => sum + e.amount, 0);
@@ -1948,6 +2027,7 @@ export default function App() {
       return {
         ...c,
         monthlyTotal: coachMonthly,
+        monthlyCheque: coachMonthlyCheque,
         monthlySkin: coachMonthlySkin,
         monthlyCorpo: coachMonthlyCorpo,
         todayTotal: coachToday,
@@ -2102,18 +2182,48 @@ export default function App() {
                         €
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-slate-200/60 text-[10px] font-medium text-slate-500">
-                      <div className="bg-white p-2 rounded-lg border border-slate-100">
-                        <span className="text-purple-600 block font-bold mb-0.5">🧴 Viso / Skin</span>
+                    <div className="grid grid-cols-3 gap-1.5 pt-2.5 border-t border-slate-200/60 text-[9px] font-medium text-slate-500">
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 flex flex-col justify-between">
+                        <span className="text-purple-600 block font-bold mb-0.5 leading-tight">🧴 Viso/Skin</span>
                         <strong className="text-slate-800 text-xs font-black">€ {accumulatedSkinMonthTotal.toFixed(2)}</strong>
                       </div>
-                      <div className="bg-white p-2 rounded-lg border border-slate-100">
-                        <span className="text-blue-600 block font-bold mb-0.5">📊 Corporea</span>
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 flex flex-col justify-between">
+                        <span className="text-blue-600 block font-bold mb-0.5 leading-tight">📊 Corporea</span>
                         <strong className="text-slate-800 text-xs font-black">€ {accumulatedCorpoMonthTotal.toFixed(2)}</strong>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 flex flex-col justify-between">
+                        <span className="text-emerald-600 block font-bold mb-0.5 leading-tight">✉️ Assegno</span>
+                        <strong className="text-slate-800 text-xs font-black">€ {currentMonthCheque.toFixed(2)}</strong>
                       </div>
                     </div>
                     <span className="text-[9px] text-slate-400 font-medium block">Filtro: {today.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
                   </div>
+
+                  {/* Annual accumulated stats box */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedYear(new Date().getFullYear());
+                      setIsAnnualBreakdownOpen(true);
+                    }}
+                    className="w-full text-left bg-gradient-to-br from-emerald-50 to-teal-50/30 border border-emerald-200 hover:border-emerald-300 rounded-2xl p-4 flex flex-col gap-2 transition-all cursor-pointer shadow-3xs group"
+                  >
+                    <div className="flex justify-between items-center w-full">
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Guadagno Annuale ({selectedYear})</span>
+                        <span className="font-display font-extrabold text-2xl text-slate-900 block mt-0.5 group-hover:text-emerald-700 transition-colors">
+                          € {accumulatedYearTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 group-hover:bg-emerald-200/80 transition-all flex items-center justify-center text-emerald-600 font-bold text-lg">
+                        📅
+                      </div>
+                    </div>
+                    <div className="text-[9.5px] text-emerald-700 font-bold flex items-center gap-1">
+                      <span>🔍 Clicca per vedere il dettaglio mensile</span>
+                      <span className="animate-bounce">→</span>
+                    </div>
+                  </button>
                 </div>
 
                 {/* Right Column: Historical logs or Admin review */}
@@ -7523,6 +7633,234 @@ export default function App() {
           </div>
         </div>
       )})}
+
+      {/* Modal: ANNUAL EARNINGS BREAKDOWN */}
+      {isAnnualBreakdownOpen && activeCoach && (() => {
+        const ITALIAN_MONTHS = [
+          'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+          'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+        ];
+
+        const activeCoachId = activeCoach?.id;
+        const currentYearStr = selectedYear.toString();
+
+        const annualEarningsSum = activeCoachId
+          ? earnings
+              .filter(e => e.coachId === activeCoachId && e.date.startsWith(currentYearStr))
+              .reduce((sum, e) => sum + e.amount, 0)
+          : 0;
+
+        const annualChequesSum = activeCoachId
+          ? cheques
+              .filter(c => c.coachId === activeCoachId && c.yearMonth.startsWith(currentYearStr))
+              .reduce((sum, c) => sum + c.amount, 0)
+          : 0;
+
+        const accumulatedYearTotal = annualEarningsSum + annualChequesSum;
+        
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800 flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📊</span>
+                  <div className="text-left">
+                    <h3 className="font-display font-extrabold text-sm tracking-wide uppercase">Riepilogo Guadagni Annuali</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">Coach: <strong className="text-white">{activeCoach.name}</strong></p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAnnualBreakdownOpen(false);
+                    setEditingChequeMonth(null);
+                  }}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {/* Annual summary widget */}
+                <div className="bg-emerald-650 bg-emerald-600 text-white p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="text-left">
+                    <span className="text-[10px] uppercase font-extrabold tracking-wider opacity-80 block">Totale Guadagno Lordo ({selectedYear})</span>
+                    <span className="text-2xl font-display font-black block mt-0.5">€ {accumulatedYearTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 text-left">
+                      <span className="block opacity-75 text-[9px] font-bold uppercase">Trattamenti</span>
+                      <strong className="font-mono font-black">€ {annualEarningsSum.toFixed(2)}</strong>
+                    </div>
+                    <div className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 text-left">
+                      <span className="block opacity-75 text-[9px] font-bold uppercase">Assegni</span>
+                      <strong className="font-mono font-black">€ {annualChequesSum.toFixed(2)}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Year Selector */}
+                <div className="flex items-center justify-between bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setSelectedYear(prev => prev - 1);
+                      setEditingChequeMonth(null);
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors font-bold text-xs cursor-pointer text-slate-750"
+                  >
+                    ◀ {selectedYear - 1}
+                  </button>
+                  <span className="font-display font-black text-base text-slate-800">{selectedYear}</span>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setSelectedYear(prev => prev + 1);
+                      setEditingChequeMonth(null);
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors font-bold text-xs cursor-pointer text-slate-750"
+                  >
+                    {selectedYear + 1} ▶
+                  </button>
+                </div>
+
+                {/* Months detailed list */}
+                <div className="space-y-2.5">
+                  {ITALIAN_MONTHS.map((monthName, idx) => {
+                    const monthNum = String(idx + 1).padStart(2, '0');
+                    const yearMonthStr = `${selectedYear}-${monthNum}`;
+
+                    // Work logs and Cheques for this coach & month
+                    const monthLogsVal = earnings
+                      .filter(e => e.coachId === activeCoach.id && e.date.startsWith(yearMonthStr))
+                      .reduce((sum, e) => sum + e.amount, 0);
+
+                    const monthSkinVal = earnings
+                      .filter(e => e.coachId === activeCoach.id && e.date.startsWith(yearMonthStr) && e.type === 'skin')
+                      .reduce((sum, e) => sum + e.amount, 0);
+
+                    const monthCorpoVal = earnings
+                      .filter(e => e.coachId === activeCoach.id && e.date.startsWith(yearMonthStr) && e.type === 'corpo')
+                      .reduce((sum, e) => sum + e.amount, 0);
+
+                    const monthChequeVal = cheques
+                      .filter(c => c.coachId === activeCoach.id && c.yearMonth === yearMonthStr)
+                      .reduce((sum, c) => sum + c.amount, 0);
+
+                    const monthTotalVal = monthLogsVal + monthChequeVal;
+                    const isEditing = editingChequeMonth === yearMonthStr;
+
+                    return (
+                      <div 
+                        key={yearMonthStr} 
+                        className="bg-white border border-slate-150 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-3xs hover:bg-slate-50/40 transition-colors"
+                      >
+                        {/* Month Info */}
+                        <div className="text-left">
+                          <h4 className="font-display font-black text-sm text-slate-800">
+                            {monthName}
+                          </h4>
+                          <div className="flex gap-2.5 mt-1 text-[10px] font-medium text-slate-400">
+                            <span>🧴 Viso: <strong className="text-slate-600 font-bold">€{monthSkinVal.toFixed(2)}</strong></span>
+                            <span>•</span>
+                            <span>📊 Corpo: <strong className="text-slate-600 font-bold">€{monthCorpoVal.toFixed(2)}</strong></span>
+                            <span>•</span>
+                            <span>💼 Trattamenti: <strong className="text-slate-700 font-extrabold">€{monthLogsVal.toFixed(2)}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Cheque Input & Total */}
+                        <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
+                          {/* Cheque Bonus Box */}
+                          <div className="bg-slate-50/50 border border-slate-150 rounded-xl px-3 py-2 flex flex-col justify-center text-left min-w-[160px]">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight block">Importo Assegno</span>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5 mt-1.5">
+                                <div className="relative">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">€</span>
+                                  <input
+                                    type="number"
+                                    value={chequeInputAmount}
+                                    onChange={(e) => setChequeInputAmount(e.target.value)}
+                                    className="w-16 pl-4 pr-1 py-0.5 bg-white border border-slate-200 rounded text-xs font-black text-slate-800 outline-none focus:ring-1 focus:ring-emerald-500"
+                                    placeholder="0"
+                                    step="0.01"
+                                    min="0"
+                                    autoFocus
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const val = parseFloat(chequeInputAmount);
+                                    handleSaveCheque(yearMonthStr, isNaN(val) ? 0 : val);
+                                  }}
+                                  disabled={isSavingCheque}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black px-1.5 py-1 rounded transition-colors cursor-pointer"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingChequeMonth(null)}
+                                  className="bg-slate-200 hover:bg-slate-300 text-slate-600 text-[9px] font-bold px-1.5 py-1 rounded transition-colors cursor-pointer"
+                                >
+                                  X
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs font-black text-emerald-800">
+                                  € {monthChequeVal.toFixed(2)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingChequeMonth(yearMonthStr);
+                                    setChequeInputAmount(monthChequeVal > 0 ? monthChequeVal.toString() : '');
+                                  }}
+                                  className="text-[9.5px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                                >
+                                  ✏️ Modifica
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Final Row Total */}
+                          <div className="text-right min-w-[80px]">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight block">Totale</span>
+                            <span className="text-sm font-black text-slate-900 block mt-0.5">
+                              € {monthTotalVal.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAnnualBreakdownOpen(false);
+                    setEditingChequeMonth(null);
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Chiudi Dettaglio
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Drawer: NOTIFICATION CENTER */}
       {isNotificationsOpen && (
