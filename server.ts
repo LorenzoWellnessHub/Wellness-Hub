@@ -134,6 +134,11 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.earnings) {
     state.earnings = [];
+  } else {
+    state.earnings = state.earnings.map((e: any) => ({
+      ...e,
+      type: e.type || 'skin'
+    }));
   }
   
   // Auto-populate members from bookings if empty
@@ -224,6 +229,30 @@ function readDb(): DbState {
   return cachedState;
 }
 
+let isSaving = false;
+let needsSave = false;
+
+async function triggerFirestoreSave() {
+  if (isSaving) {
+    needsSave = true;
+    return;
+  }
+  isSaving = true;
+  needsSave = false;
+  try {
+    if (cachedState) {
+      await saveDbToFirestore(cachedState);
+    }
+  } catch (err) {
+    console.error('Error writing state to Firestore background queue:', err);
+  } finally {
+    isSaving = false;
+    if (needsSave) {
+      triggerFirestoreSave();
+    }
+  }
+}
+
 async function writeDb(state: DbState): Promise<void> {
   cachedState = state;
   lastLoadTime = Date.now(); // Mark as loaded right now with the latest state
@@ -241,13 +270,8 @@ async function writeDb(state: DbState): Promise<void> {
     console.error('Error launching write local backup:', e);
   }
 
-  // Save to Firestore and await it!
-  try {
-    await saveDbToFirestore(state);
-  } catch (err) {
-    console.error('Error writing state to Firestore:', err);
-    throw err;
-  }
+  // Trigger Firestore save in background queue without awaiting it
+  triggerFirestoreSave();
 }
 
 // Middleware: Intercept all API routes and ensure Firestore data is loaded
@@ -1587,7 +1611,7 @@ app.get('/api/earnings', (req, res) => {
 
 // POST or update an earning record
 app.post('/api/earnings', async (req, res) => {
-  const { coachId, date, amount } = req.body;
+  const { coachId, date, amount, type } = req.body;
   if (!coachId || !date || amount === undefined || isNaN(Number(amount))) {
     return res.status(400).json({ error: 'Dati di inserimento non validi.' });
   }
@@ -1597,8 +1621,10 @@ app.post('/api/earnings', async (req, res) => {
     db.earnings = [];
   }
 
-  // Find if there is an existing record for this coach on this exact day
-  const existingIndex = db.earnings.findIndex(e => e.coachId === coachId && e.date === date);
+  const earningType = (type === 'skin' || type === 'corpo') ? type : 'skin';
+
+  // Find if there is an existing record for this coach on this exact day with this exact type
+  const existingIndex = db.earnings.findIndex(e => e.coachId === coachId && e.date === date && e.type === earningType);
   const numAmount = Number(amount);
 
   if (existingIndex !== -1) {
@@ -1612,6 +1638,7 @@ app.post('/api/earnings', async (req, res) => {
       coachId,
       date,
       amount: numAmount,
+      type: earningType,
       timestamp: Date.now()
     });
   }

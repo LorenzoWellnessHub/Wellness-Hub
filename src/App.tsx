@@ -98,6 +98,7 @@ export default function App() {
   const [earnings, setEarnings] = useState<OperatorEarning[]>([]);
   const [earningInputDate, setEarningInputDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [earningInputAmount, setEarningInputAmount] = useState<string>('');
+  const [earningInputType, setEarningInputType] = useState<'skin' | 'corpo'>('skin');
   const [isSavingEarning, setIsSavingEarning] = useState<boolean>(false);
   const [isEarningPanelOpen, setIsEarningPanelOpen] = useState<boolean>(false);
 
@@ -1146,7 +1147,8 @@ export default function App() {
         body: JSON.stringify({
           coachId: currentCoachId,
           date: earningInputDate,
-          amount: numAmount
+          amount: numAmount,
+          type: earningInputType
         })
       });
 
@@ -1908,18 +1910,49 @@ export default function App() {
       ? getMonthlyAccumulatedEarnings(activeCoach.id, todayStr)
       : 0;
 
+    const accumulatedSkinMonthTotal = activeCoach
+      ? earnings
+          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(todayStr.substring(0, 7)) && e.type === 'skin')
+          .reduce((sum, e) => sum + e.amount, 0)
+      : 0;
+
+    const accumulatedCorpoMonthTotal = activeCoach
+      ? earnings
+          .filter(e => e.coachId === activeCoach.id && e.date.startsWith(todayStr.substring(0, 7)) && e.type === 'corpo')
+          .reduce((sum, e) => sum + e.amount, 0)
+      : 0;
+
     const coachLogs = earnings
       .filter(e => e.coachId === currentCoachId)
       .sort((a, b) => b.date.localeCompare(a.date));
 
     const adminSummary = coaches.map(c => {
+      const yearMonth = todayStr.substring(0, 7);
       const coachMonthly = getMonthlyAccumulatedEarnings(c.id, todayStr);
+      const coachMonthlySkin = earnings
+        .filter(e => e.coachId === c.id && e.date.startsWith(yearMonth) && e.type === 'skin')
+        .reduce((sum, e) => sum + e.amount, 0);
+      const coachMonthlyCorpo = earnings
+        .filter(e => e.coachId === c.id && e.date.startsWith(yearMonth) && e.type === 'corpo')
+        .reduce((sum, e) => sum + e.amount, 0);
+
       const coachToday = getDailyEarnings(c.id, todayStr);
+      const coachTodaySkin = earnings
+        .filter(e => e.coachId === c.id && e.date === todayStr && e.type === 'skin')
+        .reduce((sum, e) => sum + e.amount, 0);
+      const coachTodayCorpo = earnings
+        .filter(e => e.coachId === c.id && e.date === todayStr && e.type === 'corpo')
+        .reduce((sum, e) => sum + e.amount, 0);
+
       const styles = getCoachColorClasses(c.color);
       return {
         ...c,
         monthlyTotal: coachMonthly,
+        monthlySkin: coachMonthlySkin,
+        monthlyCorpo: coachMonthlyCorpo,
         todayTotal: coachToday,
+        todaySkin: coachTodaySkin,
+        todayCorpo: coachTodayCorpo,
         styles
       };
     });
@@ -1941,9 +1974,9 @@ export default function App() {
               <h4 className="font-display font-extrabold text-base text-slate-900">
                 Gestione Guadagni Giornalieri
               </h4>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
+              <p className="text-xs text-slate-500 font-medium mt-0.5 animate-pulse">
                 {activeCoach 
-                  ? `Inserisci e traccia i tuoi compensi. Accumulato questo mese: €${accumulatedMonthTotal}`
+                  ? `Inserisci e traccia i tuoi compensi. Totale: €${accumulatedMonthTotal} (Skin: €${accumulatedSkinMonthTotal} | Corpo: €${accumulatedCorpoMonthTotal})`
                   : "Seleziona un profilo operatore per tracciare i guadagni."
                 }
               </p>
@@ -2008,6 +2041,35 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Choice between Skin and Valutazione Corporea */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tipo Guadagno</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEarningInputType('skin')}
+                            className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+                              earningInputType === 'skin'
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-3xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            🧴 Viso / Skin
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEarningInputType('corpo')}
+                            className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+                              earningInputType === 'corpo'
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-3xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            📊 Val. Corporea
+                          </button>
+                        </div>
+                      </div>
+
                       <button
                         type="submit"
                         disabled={isSavingEarning}
@@ -2027,18 +2089,30 @@ export default function App() {
                     </form>
                   </div>
 
-                  {/* Personal accumulated stats box */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex justify-between items-center gap-4">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accumulato nel mese</span>
-                      <span className="font-display font-extrabold text-2xl text-slate-900 block mt-0.5">
-                        € {accumulatedMonthTotal.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-medium">Filtro: {today.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
+                  {/* Personal accumulated stats box with split breakdown */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accumulato nel mese</span>
+                        <span className="font-display font-extrabold text-2xl text-slate-900 block mt-0.5">
+                          € {accumulatedMonthTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-lg">
+                        €
+                      </div>
                     </div>
-                    <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xl">
-                      €
+                    <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-slate-200/60 text-[10px] font-medium text-slate-500">
+                      <div className="bg-white p-2 rounded-lg border border-slate-100">
+                        <span className="text-purple-600 block font-bold mb-0.5">🧴 Viso / Skin</span>
+                        <strong className="text-slate-800 text-xs font-black">€ {accumulatedSkinMonthTotal.toFixed(2)}</strong>
+                      </div>
+                      <div className="bg-white p-2 rounded-lg border border-slate-100">
+                        <span className="text-blue-600 block font-bold mb-0.5">📊 Corporea</span>
+                        <strong className="text-slate-800 text-xs font-black">€ {accumulatedCorpoMonthTotal.toFixed(2)}</strong>
+                      </div>
                     </div>
+                    <span className="text-[9px] text-slate-400 font-medium block">Filtro: {today.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
                   </div>
                 </div>
 
@@ -2061,12 +2135,19 @@ export default function App() {
                         </p>
                       ) : (
                         coachLogs.map((log) => (
-                          <div key={log.id} className="bg-white border border-slate-150 rounded-xl p-3 flex items-center justify-between shadow-3xs hover:bg-slate-50/50 transition-colors">
+                          <div key={log.id} className="bg-white border border-slate-150 rounded-xl p-3 flex items-center justify-between shadow-3xs hover:bg-slate-50/50 transition-colors animate-fade-in">
                             <div className="flex items-center gap-3">
                               <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg font-mono">
                                 {formatItalianDate(log.date)}
                               </span>
-                              <span className="text-xs font-bold text-slate-800">Compenso giornaliero</span>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-slate-800">Compenso registrato</span>
+                                <span className={`text-[10px] font-bold mt-0.5 ${
+                                  log.type === 'corpo' ? 'text-blue-600' : 'text-purple-600'
+                                }`}>
+                                  {log.type === 'corpo' ? '📊 Valutazione Corporea' : '🧴 Viso / Skin'}
+                                </span>
+                              </div>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="font-mono font-black text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
@@ -2105,8 +2186,8 @@ export default function App() {
                           <thead>
                             <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-100">
                               <th className="p-3">COACH</th>
-                              <th className="p-3 text-center">OGGI</th>
-                              <th className="p-3 text-right pr-4">MENSILE ACCUMULATO</th>
+                              <th className="p-3 text-center">OGGI (SPLIT)</th>
+                              <th className="p-3 text-right pr-4 font-black">MENSILE ACCUMULATO (SPLIT)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
@@ -2117,10 +2198,22 @@ export default function App() {
                                   {c.name}
                                 </td>
                                 <td className="p-3 text-center font-mono font-bold text-slate-500">
-                                  {c.todayTotal > 0 ? `€${c.todayTotal.toFixed(2)}` : '—'}
+                                  {c.todayTotal > 0 ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="font-extrabold text-slate-800">€ {c.todayTotal.toFixed(2)}</span>
+                                      <span className="text-[9px] text-slate-400 mt-0.5 font-sans">
+                                        (🧴 €{c.todaySkin.toFixed(0)} | 📊 €{c.todayCorpo.toFixed(0)})
+                                      </span>
+                                    </div>
+                                  ) : '—'}
                                 </td>
-                                <td className="p-3 text-right font-mono font-black text-emerald-600 pr-4">
-                                  € {c.monthlyTotal.toFixed(2)}
+                                <td className="p-3 text-right font-mono pr-4">
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-black text-emerald-600 text-xs">€ {c.monthlyTotal.toFixed(2)}</span>
+                                    <span className="text-[9px] text-slate-400 mt-0.5 font-sans">
+                                      (🧴 €{c.monthlySkin.toFixed(0)} | 📊 €{c.monthlyCorpo.toFixed(0)})
+                                    </span>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -4404,26 +4497,42 @@ export default function App() {
                                   {slot.bookings.length === 0 ? (
                                     <span className="text-xs text-slate-400 italic">Nessun ospite prenotato in questo turno</span>
                                   ) : (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {slot.bookings.map((b) => {
-                                        const coach = coaches.find(c => c.id === b.coachId);
-                                        const coachStyles = coach ? getCoachColorClasses(coach.color) : { solid: 'bg-slate-500', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' };
-                                        return (
-                                          <div 
-                                            key={b.id} 
-                                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-semibold ${
-                                              b.status === 'riserva' 
-                                                ? 'bg-slate-50 border-slate-200 text-slate-400 line-through decoration-slate-300' 
-                                                : `${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`
-                                            }`}
-                                            title={b.status === 'riserva' ? `${b.guestName} (Riserva)` : `${b.guestName} (Confermato per Coach ${coach?.name || 'Sconosciuto'})`}
-                                          >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${b.status === 'riserva' ? 'bg-slate-300' : coachStyles.solid}`} />
-                                            <span>{b.guestName}</span>
-                                            {b.status === 'riserva' && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight ml-0.5">(Coda)</span>}
-                                          </div>
-                                        );
-                                      })}
+                                    <div className="flex flex-wrap gap-2">
+                                      {(() => {
+                                        const bookingsByCoach = slot.bookings.reduce((acc, b) => {
+                                          const coach = coaches.find(c => c.id === b.coachId);
+                                          const name = coach ? coach.name : 'Sconosciuto';
+                                          const color = coach ? coach.color : 'slate';
+                                          if (!acc[b.coachId]) {
+                                            acc[b.coachId] = { name, color, count: 0, riservaCount: 0 };
+                                          }
+                                          if (b.status === 'riserva') {
+                                            acc[b.coachId].riservaCount++;
+                                          } else {
+                                            acc[b.coachId].count++;
+                                          }
+                                          return acc;
+                                        }, {} as Record<string, { name: string; color: string; count: number; riservaCount: number }>);
+
+                                        return Object.entries(bookingsByCoach).map(([coachId, info]) => {
+                                          const coachStyles = getCoachColorClasses(info.color);
+                                          return (
+                                            <div 
+                                              key={coachId}
+                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`}
+                                            >
+                                              <span className={`w-1.5 h-1.5 rounded-full ${coachStyles.solid}`} />
+                                              <span>Coach {info.name}:</span>
+                                              <span className="font-extrabold">{info.count}</span>
+                                              {info.riservaCount > 0 && (
+                                                <span className="text-[10px] opacity-75 font-medium">
+                                                  ({info.riservaCount} in coda)
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        });
+                                      })()}
                                     </div>
                                   )}
                                 </div>

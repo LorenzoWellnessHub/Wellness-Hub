@@ -104,6 +104,7 @@ export interface OperatorEarning {
   coachId: string;
   date: string; // YYYY-MM-DD
   amount: number;
+  type: 'skin' | 'corpo';
   timestamp: number;
 }
 
