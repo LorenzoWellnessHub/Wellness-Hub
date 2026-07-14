@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -32,6 +32,7 @@ interface DbState {
   satispayUrl?: string;
   notifications?: AppNotification[];
   utilities?: UtilityItem[];
+  earnings?: OperatorEarning[];
 }
 
 let cachedState: DbState | null = null;
@@ -130,6 +131,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.utilities) {
     state.utilities = [];
+  }
+  if (!state.earnings) {
+    state.earnings = [];
   }
   
   // Auto-populate members from bookings if empty
@@ -1572,6 +1576,64 @@ app.post('/api/payments/confirm-simulated', async (req, res) => {
 
   await writeDb(db);
   res.json({ success: true, member: db.members[memberIdx] });
+});
+
+// --- OPERATOR EARNINGS API ---
+// GET all earnings records
+app.get('/api/earnings', (req, res) => {
+  const db = readDb();
+  res.json(db.earnings || []);
+});
+
+// POST or update an earning record
+app.post('/api/earnings', async (req, res) => {
+  const { coachId, date, amount } = req.body;
+  if (!coachId || !date || amount === undefined || isNaN(Number(amount))) {
+    return res.status(400).json({ error: 'Dati di inserimento non validi.' });
+  }
+
+  const db = readDb();
+  if (!db.earnings) {
+    db.earnings = [];
+  }
+
+  // Find if there is an existing record for this coach on this exact day
+  const existingIndex = db.earnings.findIndex(e => e.coachId === coachId && e.date === date);
+  const numAmount = Number(amount);
+
+  if (existingIndex !== -1) {
+    // Update existing record
+    db.earnings[existingIndex].amount = numAmount;
+    db.earnings[existingIndex].timestamp = Date.now();
+  } else {
+    // Add new record
+    db.earnings.push({
+      id: `earning_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      coachId,
+      date,
+      amount: numAmount,
+      timestamp: Date.now()
+    });
+  }
+
+  await writeDb(db);
+  res.json({ success: true, earnings: db.earnings });
+});
+
+// DELETE an earning record (for corrections)
+app.delete('/api/earnings/:id', async (req, res) => {
+  const { id } = req.params;
+  const db = readDb();
+  if (!db.earnings) {
+    db.earnings = [];
+  }
+  const initialLen = db.earnings.length;
+  db.earnings = db.earnings.filter(e => e.id !== id);
+  if (db.earnings.length === initialLen) {
+    return res.status(404).json({ error: 'Guadagno non trovato.' });
+  }
+  await writeDb(db);
+  res.json({ success: true, earnings: db.earnings });
 });
 
 // Export app for serverless environments (e.g., Vercel)

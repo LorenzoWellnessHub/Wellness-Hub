@@ -39,7 +39,7 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem } from './types';
+import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning } from './types';
 
 export default function App() {
   // Navigation & context states
@@ -48,7 +48,7 @@ export default function App() {
   const [summaries, setSummaries] = useState<SlotSummary[]>([]);
   const [corpoBookings, setCorpoBookings] = useState<ComputedBooking[]>([]);
   const [currentCoachId, setCurrentCoachId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'viso' | 'corpo' | 'resoconto'>('viso');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'resoconto'>('dashboard');
   const [selectedCorpoDate, setSelectedCorpoDate] = useState<string>('');
 
   // Members & Weeks persistence states
@@ -93,6 +93,13 @@ export default function App() {
   const [newUtilityUrl, setNewUtilityUrl] = useState<string>('');
   const [newUtilityFileName, setNewUtilityFileName] = useState<string>('');
   const [isSavingUtility, setIsSavingUtility] = useState<boolean>(false);
+
+  // Operator Earnings states
+  const [earnings, setEarnings] = useState<OperatorEarning[]>([]);
+  const [earningInputDate, setEarningInputDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [earningInputAmount, setEarningInputAmount] = useState<string>('');
+  const [isSavingEarning, setIsSavingEarning] = useState<boolean>(false);
+  const [isEarningPanelOpen, setIsEarningPanelOpen] = useState<boolean>(false);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -314,6 +321,13 @@ export default function App() {
         setUtilities(utilData || []);
       }
 
+      // Fetch operator earnings
+      const earningsResponse = await fetch('/api/earnings');
+      if (earningsResponse.ok) {
+        const earnData = await earningsResponse.json();
+        setEarnings(earnData || []);
+      }
+
       // Restores the logged in coach from localStorage if found
       const savedCoachId = localStorage.getItem('wellness_hub_logged_coach_id');
       if (savedCoachId && data.coaches && data.coaches.some((c: Coach) => c.id === savedCoachId)) {
@@ -381,7 +395,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isAdminMode && activeTab === 'resoconto') {
-      setActiveTab('viso');
+      setActiveTab('dashboard');
     }
   }, [isAdminMode, activeTab]);
 
@@ -1111,6 +1125,74 @@ export default function App() {
     }
   };
 
+  // Operator Earnings Handlers
+  const handleSaveEarning = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!currentCoachId) {
+      alert('Seleziona prima il tuo profilo operatore per inserire un guadagno.');
+      return;
+    }
+    const numAmount = parseFloat(earningInputAmount);
+    if (isNaN(numAmount) || numAmount < 0) {
+      alert('Inserisci un importo valido (maggiore o uguale a 0).');
+      return;
+    }
+
+    setIsSavingEarning(true);
+    try {
+      const response = await fetch('/api/earnings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coachId: currentCoachId,
+          date: earningInputDate,
+          amount: numAmount
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore durante il salvataggio del guadagno.');
+      }
+
+      const result = await response.json();
+      if (result.success && result.earnings) {
+        setEarnings(result.earnings);
+        setEarningInputAmount('');
+        setSuccessMessage('Guadagno salvato con successo!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Errore di connessione durante il salvataggio.');
+    } finally {
+      setIsSavingEarning(false);
+    }
+  };
+
+  const handleDeleteEarning = async (id: string) => {
+    if (!window.confirm('Sei sicuro di voler eliminare questo record di guadagno?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/earnings/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore durante l\'eliminazione del guadagno.');
+      }
+
+      const result = await response.json();
+      if (result.success && result.earnings) {
+        setEarnings(result.earnings);
+        setSuccessMessage('Guadagno eliminato con successo!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Errore di connessione durante l\'eliminazione.');
+    }
+  };
+
   // Member & Payment Management Handlers
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1796,6 +1878,268 @@ export default function App() {
     return map['emerald'];
   };
 
+  const getMonthlyAccumulatedEarnings = (coachId: string, targetDateStr: string) => {
+    if (!targetDateStr) return 0;
+    const yearMonth = targetDateStr.substring(0, 7); // "YYYY-MM"
+    return earnings
+      .filter(e => e.coachId === coachId && e.date.startsWith(yearMonth))
+      .reduce((sum, e) => sum + e.amount, 0);
+  };
+
+  const getDailyEarnings = (coachId: string, dateStr: string) => {
+    return earnings
+      .filter(e => e.coachId === coachId && e.date === dateStr)
+      .reduce((sum, e) => sum + e.amount, 0);
+  };
+
+  const renderEarningsTracker = (isAdminView: boolean = false) => {
+    const activeCoach = coaches.find(c => c.id === currentCoachId);
+    const activeCoachName = activeCoach ? activeCoach.name : 'Operatore';
+    const activeCoachStyles = activeCoach 
+      ? getCoachColorClasses(activeCoach.color) 
+      : { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', ring: 'ring-emerald-500/10', solid: 'bg-emerald-600', lightText: 'text-emerald-600', hover: 'hover:bg-emerald-100' };
+
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const todayStr = `${year}-${month}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const accumulatedMonthTotal = activeCoach 
+      ? getMonthlyAccumulatedEarnings(activeCoach.id, todayStr)
+      : 0;
+
+    const coachLogs = earnings
+      .filter(e => e.coachId === currentCoachId)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    const adminSummary = coaches.map(c => {
+      const coachMonthly = getMonthlyAccumulatedEarnings(c.id, todayStr);
+      const coachToday = getDailyEarnings(c.id, todayStr);
+      const styles = getCoachColorClasses(c.color);
+      return {
+        ...c,
+        monthlyTotal: coachMonthly,
+        todayTotal: coachToday,
+        styles
+      };
+    });
+
+    const totalClubEarningsThisMonth = adminSummary.reduce((sum, c) => sum + c.monthlyTotal, 0);
+
+    return (
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+        {/* Accordion Trigger Header */}
+        <button
+          onClick={() => setIsEarningPanelOpen(!isEarningPanelOpen)}
+          className="w-full flex items-center justify-between text-left focus:outline-none cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+              <span className="text-xl">💰</span>
+            </div>
+            <div>
+              <h4 className="font-display font-extrabold text-base text-slate-900">
+                Gestione Guadagni Giornalieri
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                {activeCoach 
+                  ? `Inserisci e traccia i tuoi compensi. Accumulato questo mese: €${accumulatedMonthTotal}`
+                  : "Seleziona un profilo operatore per tracciare i guadagni."
+                }
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {activeCoach && (
+              <span className="hidden sm:inline-block bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full border border-emerald-100">
+                Mese: €{accumulatedMonthTotal}
+              </span>
+            )}
+            <span className="text-slate-400 font-bold transition-transform duration-200 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-100">
+              {isEarningPanelOpen ? '▲ Chiudi' : '▼ Apri'}
+            </span>
+          </div>
+        </button>
+
+        {/* Accordion Content */}
+        {isEarningPanelOpen && (
+          <div className="pt-4 border-t border-slate-100 space-y-6 animate-slide-down">
+            {!currentCoachId ? (
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-center text-xs text-amber-800 font-medium">
+                ⚠️ Per favore, seleziona prima il tuo profilo operatore in alto a destra per registrare i guadagni di oggi.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Column: Form & Personal Stats */}
+                <div className="lg:col-span-5 space-y-5">
+                  <div className={`p-4 rounded-2xl border ${activeCoachStyles.bg} ${activeCoachStyles.border} space-y-3`}>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">INSERISCI GUADAGNO</span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${activeCoachStyles.solid} text-white`}>
+                        {activeCoachName}
+                      </span>
+                    </div>
+
+                    <form onSubmit={handleSaveEarning} className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Giorno</label>
+                          <input
+                            type="date"
+                            value={earningInputDate}
+                            onChange={(e) => setEarningInputDate(e.target.value)}
+                            className="w-full text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Compenso (€)</label>
+                          <input
+                            type="number"
+                            placeholder="es. 45"
+                            value={earningInputAmount}
+                            onChange={(e) => setEarningInputAmount(e.target.value)}
+                            className="w-full text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-slate-800"
+                            min="0"
+                            step="0.01"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSavingEarning}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {isSavingEarning ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Salvataggio...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>📥</span> Registra Guadagno
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Personal accumulated stats box */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex justify-between items-center gap-4">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accumulato nel mese</span>
+                      <span className="font-display font-extrabold text-2xl text-slate-900 block mt-0.5">
+                        € {accumulatedMonthTotal.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium">Filtro: {today.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xl">
+                      €
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Historical logs or Admin review */}
+                <div className="lg:col-span-7 space-y-4">
+                  
+                  {/* Switchable views: History of the active coach OR Admin view of all coaches */}
+                  <div className="flex border-b border-slate-100 pb-2 justify-between items-center">
+                    <span className="text-xs font-bold text-slate-700 uppercase">
+                      {isAdminView ? '📈 Riepilogo di Tutti i Coach (Admin)' : '🕒 La tua cronologia di inserimento'}
+                    </span>
+                  </div>
+
+                  {!isAdminView ? (
+                    /* Active coach logs list */
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                      {coachLogs.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200/50">
+                          Nessun guadagno registrato finora.
+                        </p>
+                      ) : (
+                        coachLogs.map((log) => (
+                          <div key={log.id} className="bg-white border border-slate-150 rounded-xl p-3 flex items-center justify-between shadow-3xs hover:bg-slate-50/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg font-mono">
+                                {formatItalianDate(log.date)}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800">Compenso giornaliero</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono font-black text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                                + €{log.amount.toFixed(2)}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteEarning(log.id)}
+                                className="text-slate-300 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
+                                title="Elimina"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : (
+                    /* Admin list: All coaches performance of the month */
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Totale Club Compensi</span>
+                          <strong className="text-lg font-black text-slate-900 block mt-0.5">€ {totalClubEarningsThisMonth.toFixed(2)}</strong>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Compensi di Oggi</span>
+                          <strong className="text-lg font-black text-emerald-600 block mt-0.5">
+                            € {adminSummary.reduce((sum, c) => sum + c.todayTotal, 0).toFixed(2)}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-100">
+                              <th className="p-3">COACH</th>
+                              <th className="p-3 text-center">OGGI</th>
+                              <th className="p-3 text-right pr-4">MENSILE ACCUMULATO</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {adminSummary.map(c => (
+                              <tr key={c.id} className="hover:bg-slate-50/50 transition-all">
+                                <td className="p-3 flex items-center gap-2 font-bold text-slate-800">
+                                  <span className={`w-2.5 h-2.5 rounded-full ${c.styles.solid}`} />
+                                  {c.name}
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold text-slate-500">
+                                  {c.todayTotal > 0 ? `€${c.todayTotal.toFixed(2)}` : '—'}
+                                </td>
+                                <td className="p-3 text-right font-mono font-black text-emerald-600 pr-4">
+                                  € {c.monthlyTotal.toFixed(2)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const colorsList = ['emerald', 'purple', 'amber', 'blue', 'indigo', 'pink', 'rose', 'cyan'];
 
   // Helper to render Italian Day names
@@ -2145,76 +2489,90 @@ export default function App() {
                     <Menu className="w-4 h-4" />
                   </button>
                   {isUtilityDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-2.5 z-[110] text-slate-800 animate-scale-up">
-                      <div className="px-3.5 py-1.5 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                        📁 Utility e Risorse
+                    <>
+                      {/* Mobile & desktop backdrop to close dropdown on tap outside */}
+                      <div 
+                        className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs md:bg-transparent md:backdrop-blur-none z-[100]" 
+                        onClick={() => setIsUtilityDropdownOpen(false)} 
+                      />
+                      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-sm md:absolute md:top-auto md:left-auto md:translate-x-0 md:translate-y-0 md:right-0 md:mt-2 md:w-60 bg-white rounded-2xl shadow-xl border border-slate-200 py-3 z-[110] text-slate-800 animate-scale-up max-h-[85vh] md:max-h-[70vh] overflow-y-auto">
+                        <div className="flex items-center justify-between px-3.5 py-1.5 border-b border-slate-100">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                            📁 Utility e Risorse
+                          </span>
+                          <button
+                            onClick={() => setIsUtilityDropdownOpen(false)}
+                            className="md:hidden text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedUtilityCategory('locandine');
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">🖼️</span> Locandine
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUtilityCategory('startup');
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">🚀</span> Start Up
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUtilityCategory('listino');
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">💰</span> Listino prezzi aggiornato
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUtilityCategory('regolamento');
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">📄</span> Regolamento del Club
+                        </button>
+                        <div className="border-t border-slate-100 my-1.5 pt-1.5" />
+                        <button
+                          id="btn-admin-toggle"
+                          onClick={() => {
+                            setIsUtilityDropdownOpen(false);
+                            if (isAdminMode) {
+                              setIsAdminMode(false);
+                              setShowAdminDropdown(false);
+                              setShowCoachMgmt(false);
+                              setSuccessMessage('Modalità Amministratore disattivata.');
+                              setTimeout(() => setSuccessMessage(''), 3000);
+                            } else {
+                              setShowAdminLoginModal(true);
+                              setAdminPasswordInput('');
+                            }
+                          }}
+                          className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 font-bold transition-colors cursor-pointer ${
+                            isAdminMode 
+                              ? 'hover:bg-red-50 text-red-700 hover:text-red-800' 
+                              : 'hover:bg-amber-50 text-amber-800 hover:text-amber-900'
+                          }`}
+                        >
+                          <Shield className={`w-3.5 h-3.5 ${isAdminMode ? 'text-red-600' : 'text-amber-600'}`} />
+                          <span>{isAdminMode ? 'Disattiva Amministratore' : 'Accedi Admin'}</span>
+                        </button>
                       </div>
-                      <button
-                        onClick={() => {
-                          setSelectedUtilityCategory('locandine');
-                          setIsUtilityDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
-                      >
-                        <span className="text-sm">🖼️</span> Locandine
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUtilityCategory('startup');
-                          setIsUtilityDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
-                      >
-                        <span className="text-sm">🚀</span> Start Up
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUtilityCategory('listino');
-                          setIsUtilityDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
-                      >
-                        <span className="text-sm">💰</span> Listino prezzi aggiornato
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUtilityCategory('regolamento');
-                          setIsUtilityDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
-                      >
-                        <span className="text-sm">📄</span> Regolamento del Club
-                      </button>
-                    </div>
+                    </>
                   )}
                 </div>
               )}
-
-              <div className="h-5 w-px bg-slate-300 mx-1" />
-
-              <button
-                id="btn-admin-toggle"
-                onClick={() => {
-                  if (isAdminMode) {
-                    setIsAdminMode(false);
-                    setShowAdminDropdown(false);
-                    setShowCoachMgmt(false);
-                    setSuccessMessage('Modalità Amministratore disattivata.');
-                    setTimeout(() => setSuccessMessage(''), 3000);
-                  } else {
-                    setShowAdminLoginModal(true);
-                    setAdminPasswordInput('');
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                  isAdminMode 
-                    ? 'bg-red-600 text-white hover:bg-red-700 shadow-sm animate-pulse' 
-                    : 'bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-200'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                {isAdminMode ? 'Amministratore Attivo' : 'Accedi Admin'}
-              </button>
 
               {isAdminMode && (
                 <button
@@ -2244,19 +2602,26 @@ export default function App() {
                   </button>
 
                   {showAdminDropdown && (
-                    <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 space-y-4 z-50 text-slate-800 animate-scale-up">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h4 className="font-display font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                          <Shield className="w-3.5 h-3.5 text-emerald-600" />
-                          Strumenti Admin
-                        </h4>
-                        <button
-                          onClick={() => setShowAdminDropdown(false)}
-                          className="text-slate-400 hover:text-slate-600 text-xs font-bold p-1"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                    <>
+                      {/* Mobile backdrop to close admin dropdown on tap outside */}
+                      <div 
+                        className="fixed inset-0 bg-slate-900/10 backdrop-blur-[1px] md:hidden z-45" 
+                        onClick={() => setShowAdminDropdown(false)} 
+                      />
+                      <div className="fixed inset-x-4 top-[150px] md:absolute md:inset-x-auto md:right-0 md:top-auto md:mt-2 w-auto md:w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 space-y-4 z-50 text-slate-800 animate-scale-up max-h-[75vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <h4 className="font-display font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                            <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                            Strumenti Admin
+                          </h4>
+                          <button
+                            onClick={() => setShowAdminDropdown(false)}
+                            className="text-slate-400 hover:text-slate-600 text-xs font-bold p-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
 
                       {/* USER PASSWORDS / PINS MANAGEMENT */}
                       <div className="space-y-1.5 text-left">
@@ -2407,6 +2772,7 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+                  </>
                   )}
                 </div>
               )}
@@ -3621,6 +3987,17 @@ export default function App() {
         {/* Screen Tabs Switcher */}
         <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px">
           <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px-6 py-3.5 border-b-2 text-sm font-bold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+              activeTab === 'dashboard'
+                ? 'border-emerald-600 text-emerald-700 font-extrabold bg-emerald-50/10'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span className="text-base">🏠</span>
+            Dashboard
+          </button>
+          <button
             onClick={() => setActiveTab('viso')}
             className={`px-6 py-3.5 border-b-2 text-sm font-bold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
               activeTab === 'viso'
@@ -3658,93 +4035,410 @@ export default function App() {
         </div>
 
         {/* 2. Calendar Week Navigation & Controls Dashboard */}
-        <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-          
-          {/* Week Nav */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrevWeek}
-              className="p-2 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors"
-              title="Settimana Precedente"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
+        {activeTab !== 'dashboard' && (
+          <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
             
-            <div className="text-center px-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">PIANIFICAZIONE</span>
-              <span className="font-display font-bold text-base text-slate-800">
-                Settimana del {selectedMonday && formatItalianDate(selectedMonday)}
-              </span>
+            {/* Week Nav */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrevWeek}
+                className="p-2 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors"
+                title="Settimana Precedente"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              
+              <div className="text-center px-4">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">PIANIFICAZIONE</span>
+                <span className="font-display font-bold text-base text-slate-800">
+                  Settimana del {selectedMonday && formatItalianDate(selectedMonday)}
+                </span>
+              </div>
+
+              <button
+                onClick={handleNextWeek}
+                disabled={isNextWeekDisabled()}
+                className={`p-2 rounded-xl border transition-all ${
+                  isNextWeekDisabled()
+                    ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
+                    : 'hover:bg-slate-100 border-slate-200 text-slate-600 cursor-pointer'
+                }`}
+                title={isNextWeekDisabled() ? "Settimane successive bloccate dall'amministratore" : "Settimana Successiva"}
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+
+              <button
+                onClick={handleResetToCurrentWeek}
+                className="text-xs text-emerald-600 hover:text-emerald-700 font-bold ml-2 underline px-1"
+              >
+                Oggi
+              </button>
             </div>
 
-            <button
-              onClick={handleNextWeek}
-              disabled={isNextWeekDisabled()}
-              className={`p-2 rounded-xl border transition-all ${
-                isNextWeekDisabled()
-                  ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
-                  : 'hover:bg-slate-100 border-slate-200 text-slate-600 cursor-pointer'
-              }`}
-              title={isNextWeekDisabled() ? "Settimane successive bloccate dall'amministratore" : "Settimana Successiva"}
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-
-            <button
-              onClick={handleResetToCurrentWeek}
-              className="text-xs text-emerald-600 hover:text-emerald-700 font-bold ml-2 underline px-1"
-            >
-              Oggi
-            </button>
-          </div>
-
-          {/* Action buttons & Rules Explanations Toggle */}
-          <div className="flex flex-wrap items-center gap-2">
-            
-            {activeTab === 'viso' ? (
-              <>
-                {/* Priority explanation toggle */}
-                <button
-                  onClick={() => setShowRulesExplanation(!showRulesExplanation)}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    showRulesExplanation 
-                      ? 'bg-amber-50 text-amber-800 border border-amber-200' 
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-transparent'
-                  }`}
-                >
-                  <HelpCircle className="w-4 h-4 text-amber-500 animate-bounce" />
-                  <span>Regole Priorità</span>
-                </button>
-
-                {/* Custom Slot (Flexible Turn) Adder */}
-                {isAdminMode && (
+            {/* Action buttons & Rules Explanations Toggle */}
+            <div className="flex flex-wrap items-center gap-2">
+              
+              {activeTab === 'viso' ? (
+                <>
+                  {/* Priority explanation toggle */}
                   <button
-                    onClick={() => setShowCustomSlotModal(true)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setShowRulesExplanation(!showRulesExplanation)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      showRulesExplanation 
+                        ? 'bg-amber-50 text-amber-800 border border-amber-200' 
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-transparent'
+                    }`}
                   >
-                    <Plus className="w-4 h-4" />
-                    Nuovo Turno Settimanale
+                    <HelpCircle className="w-4 h-4 text-amber-500 animate-bounce" />
+                    <span>Regole Priorità</span>
                   </button>
-                )}
-              </>
-            ) : (
-              <button
-                onClick={() => {
-                  setCorpoTime('09:00');
-                  setCorpoGuestName('');
-                  setCorpoNotes('');
-                  setShowCorpoBookingModal(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Prenota Valutazione Corporea
-              </button>
-            )}
 
+                  {/* Custom Slot (Flexible Turn) Adder */}
+                  {isAdminMode && (
+                    <button
+                      onClick={() => setShowCustomSlotModal(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Nuovo Turno Settimanale
+                    </button>
+                  )}
+                </>
+              ) : activeTab === 'corpo' ? (
+                <button
+                  onClick={() => {
+                    setCorpoTime('09:00');
+                    setCorpoGuestName('');
+                    setCorpoNotes('');
+                    setShowCorpoBookingModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Prenota Valutazione Corporea
+                </button>
+              ) : null}
+
+            </div>
+
+          </section>
+        )}
+
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* 1. Benvenuto & Resoconto Utenza Attiva */}
+            {(() => {
+              const activeCoach = coaches.find(c => c.id === currentCoachId);
+              const coachName = activeCoach ? activeCoach.name : 'Amministratore';
+              const coachColorStyles = activeCoach 
+                ? getCoachColorClasses(activeCoach.color) 
+                : { solid: 'bg-emerald-600', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' };
+
+              // Current YYYY-MM-DD local
+              const today = new Date();
+              const year = today.getFullYear();
+              const month = String(today.getMonth() + 1).padStart(2, '0');
+              const day = String(today.getDate()).padStart(2, '0');
+              const todayStr = `${year}-${month}-${day}`;
+              const currentYM = `${year}-${month}`;
+
+              // Viso bookings today for this coach
+              const todayVisoBookings = summaries.reduce((acc: any[], s) => {
+                if (s.date === todayStr) {
+                  const coachB = (s.bookings || []).filter(b => b.coachId === currentCoachId);
+                  coachB.forEach(b => {
+                    acc.push({
+                      time: s.time,
+                      guestName: b.guestName,
+                      type: 'viso',
+                      status: b.isReserve ? 'Riserva' : 'Confermato',
+                      notes: b.notes
+                    });
+                  });
+                }
+                return acc;
+              }, []);
+
+              // Corpo bookings today for this coach
+              const todayCorpoBookings = corpoBookings.filter(b => {
+                const parts = b.slotId.split('_'); // e.g. slot_2026-07-14_09:00
+                const slotDate = parts[1];
+                return slotDate === todayStr && b.coachId === currentCoachId;
+              }).map(b => {
+                const parts = b.slotId.split('_');
+                return {
+                  time: parts[2] || '?',
+                  guestName: b.guestName,
+                  type: 'corpo',
+                  status: 'Confermato',
+                  notes: b.notes
+                };
+              });
+
+              const allTodayBookings = [...todayVisoBookings, ...todayCorpoBookings].sort((a, b) => a.time.localeCompare(b.time));
+
+              // Monthly counts
+              const monthVisoCount = summaries.reduce((acc, s) => {
+                if (s.date.startsWith(currentYM)) {
+                  return acc + (s.bookings || []).filter(b => b.coachId === currentCoachId).length;
+                }
+                return acc;
+              }, 0);
+
+              const monthCorpoCount = corpoBookings.filter(b => {
+                const parts = b.slotId.split('_');
+                return parts[1] && parts[1].startsWith(currentYM) && b.coachId === currentCoachId;
+              }).length;
+
+              const totalMonthBookings = monthVisoCount + monthCorpoCount;
+
+              return (
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
+                  {/* Title & Welcome bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">👋</span>
+                        <h3 className="font-display font-extrabold text-xl text-slate-950">
+                          Benvenuto, <span className={`${coachColorStyles.text} font-black`}>{coachName}</span>!
+                        </h3>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Ecco la panoramica in tempo reale del tuo lavoro nel club.
+                      </p>
+                    </div>
+                    {activeCoach && (
+                      <div className={`px-4 py-2 rounded-2xl border text-xs font-bold flex items-center gap-2 shadow-2xs ${coachColorStyles.bg} ${coachColorStyles.border} ${coachColorStyles.text}`}>
+                        <span className={`w-2 h-2 rounded-full ${coachColorStyles.solid} animate-pulse`} />
+                        <span>Profilo Attivo</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Daily & Monthly Stats Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Column 1: Daily Activity */}
+                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">📅</span>
+                          <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Attività Giornaliera</span>
+                        </div>
+                        <span className="bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-600">
+                          Oggi, {formatItalianDate(todayStr)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-display font-black text-4xl text-slate-900">
+                          {allTodayBookings.length}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">prenotati per oggi</span>
+                      </div>
+
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                        {allTodayBookings.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic text-center py-4 bg-white/50 rounded-xl border border-dashed border-slate-200/50">
+                            Nessun trattamento o valutazione programmato per oggi.
+                          </p>
+                        ) : (
+                          allTodayBookings.map((b, idx) => (
+                            <div key={idx} className="bg-white border border-slate-200/60 rounded-xl p-3 flex items-center justify-between gap-3 shadow-3xs">
+                              <div className="flex items-center gap-2.5 overflow-hidden">
+                                <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg font-mono">
+                                  {b.time}
+                                </span>
+                                <div className="text-left overflow-hidden">
+                                  <p className="text-xs font-bold text-slate-800 truncate">{b.guestName}</p>
+                                  <p className="text-[10px] text-slate-400 font-semibold truncate">
+                                    {b.notes ? `📝 ${b.notes}` : 'Nessuna nota aggiuntiva'}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                                b.type === 'viso'
+                                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                                  : 'bg-blue-50 border-blue-100 text-blue-700'
+                              }`}>
+                                {b.type === 'viso' ? '🌸 Viso' : '⚖️ Corpo'}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Column 2: Monthly Activity */}
+                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">📊</span>
+                          <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Attività Mensile</span>
+                        </div>
+                        <span className="bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-600 uppercase">
+                          {new Date().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-display font-black text-4xl text-slate-900">
+                          {totalMonthBookings}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">ospiti totali del mese</span>
+                      </div>
+
+                      {/* Monthly Breakdown Cards */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white border border-slate-200/60 rounded-xl p-3.5 text-center space-y-1.5 shadow-3xs">
+                          <span className="text-lg">🌸</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trattamenti Viso</span>
+                          <strong className="text-xl font-extrabold text-slate-800 block leading-none">{monthVisoCount}</strong>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-xl p-3.5 text-center space-y-1.5 shadow-3xs">
+                          <span className="text-lg">⚖️</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Valutazioni Corporee</span>
+                          <strong className="text-xl font-extrabold text-slate-800 block leading-none">{monthCorpoCount}</strong>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 text-center font-medium">
+                        I dati di lavoro visualizzati in questa sezione fanno riferimento esclusivamente al profilo attivo e sono a puro scopo informativo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Operator earnings tracker under the welcome/active stats report */}
+            {renderEarningsTracker(isAdminMode)}
+
+            {/* 2. Unified Clean Weekly Calendar Overview */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div className="space-y-1">
+                  <h4 className="font-display font-extrabold text-base text-slate-900 flex items-center gap-2">
+                    <span>🗓️</span> Calendario dei Turni della Settimana
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Vista semplificata e pulita di tutti i turni attivi e dei relativi ospiti registrati nel club.
+                  </p>
+                </div>
+              </div>
+
+              {isLoading ? (
+                <div className="p-12 text-center space-y-4">
+                  <div className="inline-block w-10 h-10 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                  <p className="text-xs font-semibold text-slate-500">Aggiornamento del calendario...</p>
+                </div>
+              ) : sortedDates.length === 0 ? (
+                <div className="p-12 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200/80">
+                  <span className="text-3xl block">📁</span>
+                  <h5 className="font-bold text-slate-700 text-sm">Nessun turno in questa settimana</h5>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto">Non sono configurati turni lavorativi standard o flessibili per il periodo selezionato.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {sortedDates.map(dateStr => {
+                    const daySlots = groupedSlots[dateStr] || [];
+                    if (daySlots.length === 0) return null;
+
+                    return (
+                      <div key={dateStr} className="border border-slate-150 rounded-2xl overflow-hidden shadow-2xs">
+                        {/* Day Header Banner inside Calendar */}
+                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-150 flex items-center justify-between">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-display font-extrabold text-sm text-slate-800">
+                              {getItalianDayName(dateStr)}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-400">
+                              {formatItalianDate(dateStr)}
+                            </span>
+                          </div>
+                          <span className="bg-white border border-slate-200 text-slate-500 font-bold text-[10px] px-2 py-0.5 rounded-lg">
+                            {daySlots.length} {daySlots.length === 1 ? 'turno' : 'turni'}
+                          </span>
+                        </div>
+
+                        {/* Slots for this day in a clean layout */}
+                        <div className="divide-y divide-slate-100 bg-white">
+                          {daySlots.map(slot => {
+                            const isFull = slot.confirmedCount >= 15;
+                            return (
+                              <div key={slot.slotId} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/40 transition-colors">
+                                {/* Slot Info */}
+                                <div className="space-y-1.5 min-w-[200px]">
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-lg font-mono flex items-center gap-1 shrink-0">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                      {slot.time}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                      isFull 
+                                        ? 'bg-amber-50 border-amber-100 text-amber-700' 
+                                        : 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                                    }`}>
+                                      {isFull ? 'Completo' : 'Posti disponibili'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                                    <span>🌸 Trattamento Viso</span>
+                                    <span>•</span>
+                                    <span>{slot.confirmedCount} / 15 confermati</span>
+                                  </div>
+                                </div>
+
+                                {/* Progress Bar */}
+                                <div className="hidden lg:block w-40 shrink-0">
+                                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+                                    <div 
+                                      className={`h-full ${isFull ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                      style={{ width: `${Math.min(100, (slot.confirmedCount / 15) * 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Guest names list - completely clean read-only */}
+                                <div className="flex-1 text-left">
+                                  {slot.bookings.length === 0 ? (
+                                    <span className="text-xs text-slate-400 italic">Nessun ospite prenotato in questo turno</span>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {slot.bookings.map((b) => {
+                                        const coach = coaches.find(c => c.id === b.coachId);
+                                        const coachStyles = coach ? getCoachColorClasses(coach.color) : { solid: 'bg-slate-500', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' };
+                                        return (
+                                          <div 
+                                            key={b.id} 
+                                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-semibold ${
+                                              b.status === 'riserva' 
+                                                ? 'bg-slate-50 border-slate-200 text-slate-400 line-through decoration-slate-300' 
+                                                : `${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`
+                                            }`}
+                                            title={b.status === 'riserva' ? `${b.guestName} (Riserva)` : `${b.guestName} (Confermato per Coach ${coach?.name || 'Sconosciuto'})`}
+                                          >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${b.status === 'riserva' ? 'bg-slate-300' : coachStyles.solid}`} />
+                                            <span>{b.guestName}</span>
+                                            {b.status === 'riserva' && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight ml-0.5">(Coda)</span>}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-
-        </section>
+        )}
 
         {/* 3. Priority Algorithm Explanation Box */}
         {activeTab === 'viso' && showRulesExplanation && (
@@ -5218,6 +5912,11 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* Operator earnings tracker at the bottom of Resoconto tab */}
+            <div className="mt-6">
+              {renderEarningsTracker(isAdminMode)}
+            </div>
           </div>
         )}
 

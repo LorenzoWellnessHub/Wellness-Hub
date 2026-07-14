@@ -99,4 +99,12 @@ export interface UtilityItem {
   uploadedAt: number;
 }
 
+export interface OperatorEarning {
+  id: string;
+  coachId: string;
+  date: string; // YYYY-MM-DD
+  amount: number;
+  timestamp: number;
+}
+
 
