@@ -116,4 +116,18 @@ export interface MonthlyCheque {
   timestamp: number;
 }
 
+export interface Contact {
+  id: string;
+  coachId: string;
+  contactName: string;
+  phone: string; // Cellulare
+  skinDate: string; // YYYY-MM-DD or text
+  evaluation: boolean; // Valutazione
+  activityInfo: boolean; // Info Attività
+  sport: boolean; // Sport
+  productsPurchased: string; // Prodotti acquistati
+  notes: string; // Note
+  timestamp: number;
+}
+
 

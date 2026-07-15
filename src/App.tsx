@@ -39,7 +39,7 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque } from './types';
+import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './types';
 
 export default function App() {
   // Navigation & context states
@@ -107,6 +107,22 @@ export default function App() {
   const [editingChequeMonth, setEditingChequeMonth] = useState<string | null>(null);
   const [chequeInputAmount, setChequeInputAmount] = useState<string>('');
   const [isSavingCheque, setIsSavingCheque] = useState<boolean>(false);
+
+  // Contacts states
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isContactsDbOpen, setIsContactsDbOpen] = useState<boolean>(false);
+  const [searchContactQuery, setSearchContactQuery] = useState<string>('');
+  const [newContactName, setNewContactName] = useState<string>('');
+  const [newContactPhone, setNewContactPhone] = useState<string>('');
+  const [newContactSkinDate, setNewContactSkinDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [newContactEvaluation, setNewContactEvaluation] = useState<boolean>(false);
+  const [newContactActivityInfo, setNewContactActivityInfo] = useState<boolean>(false);
+  const [newContactSport, setNewContactSport] = useState<boolean>(false);
+  const [newContactProducts, setNewContactProducts] = useState<string>('');
+  const [newContactNotes, setNewContactNotes] = useState<string>('');
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [isSavingContact, setIsSavingContact] = useState<boolean>(false);
+  const [selectedContactForDetail, setSelectedContactForDetail] = useState<Contact | null>(null);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -412,6 +428,14 @@ export default function App() {
       setActiveTab('dashboard');
     }
   }, [isAdminMode, activeTab]);
+
+  useEffect(() => {
+    if (isLoggedIn && currentCoachId) {
+      fetchContacts(currentCoachId);
+    } else {
+      setContacts([]);
+    }
+  }, [isLoggedIn, currentCoachId]);
 
   const getCurrentWeekMonday = () => {
     const today = new Date();
@@ -1242,6 +1266,125 @@ export default function App() {
     } finally {
       setIsSavingCheque(false);
     }
+  };
+
+  const fetchContacts = async (coachId?: string) => {
+    const targetCoachId = coachId || currentCoachId;
+    if (!targetCoachId) {
+      setContacts([]);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/contacts?coachId=${targetCoachId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setContacts(data || []);
+      }
+    } catch (err) {
+      console.error('Errore nel caricamento dei contatti', err);
+    }
+  };
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCoachId) {
+      alert('Effettua prima l\'accesso come operatore.');
+      return;
+    }
+    if (!newContactName.trim()) {
+      alert('Il nome del contatto è obbligatorio.');
+      return;
+    }
+
+    setIsSavingContact(true);
+    try {
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingContactId || undefined,
+          coachId: currentCoachId,
+          contactName: newContactName.trim(),
+          phone: newContactPhone.trim(),
+          skinDate: newContactSkinDate,
+          evaluation: !!newContactEvaluation,
+          activityInfo: !!newContactActivityInfo,
+          sport: !!newContactSport,
+          productsPurchased: newContactProducts.trim(),
+          notes: newContactNotes.trim()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore nel salvataggio del contatto.');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // reload
+        await fetchContacts(currentCoachId);
+        
+        // Reset states
+        setNewContactName('');
+        setNewContactPhone('');
+        setNewContactSkinDate(new Date().toISOString().split('T')[0]);
+        setNewContactEvaluation(false);
+        setNewContactActivityInfo(false);
+        setNewContactSport(false);
+        setNewContactProducts('');
+        setNewContactNotes('');
+        setEditingContactId(null);
+        
+        setSuccessMessage(editingContactId ? 'Contatto aggiornato con successo!' : 'Contatto aggiunto con successo!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Errore durante il salvataggio.');
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
+
+  const handleDeleteContact = async (id: string) => {
+    if (!window.confirm('Sei sicuro di voler eliminare questo contatto?')) return;
+    try {
+      const response = await fetch(`/api/contacts/${id}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        await fetchContacts(currentCoachId || undefined);
+        setSuccessMessage('Contatto eliminato con successo!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        throw new Error('Errore durante l\'eliminazione.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Impossibile eliminare il contatto.');
+    }
+  };
+
+  const handleEditContactClick = (contact: Contact) => {
+    setEditingContactId(contact.id);
+    setNewContactName(contact.contactName);
+    setNewContactPhone(contact.phone || '');
+    setNewContactSkinDate(contact.skinDate);
+    setNewContactEvaluation(contact.evaluation);
+    setNewContactActivityInfo(contact.activityInfo);
+    setNewContactSport(contact.sport);
+    setNewContactProducts(contact.productsPurchased);
+    setNewContactNotes(contact.notes);
+  };
+
+  const handleCancelContactEdit = () => {
+    setEditingContactId(null);
+    setNewContactName('');
+    setNewContactPhone('');
+    setNewContactSkinDate(new Date().toISOString().split('T')[0]);
+    setNewContactEvaluation(false);
+    setNewContactActivityInfo(false);
+    setNewContactSport(false);
+    setNewContactProducts('');
+    setNewContactNotes('');
   };
 
   // Member & Payment Management Handlers
@@ -2745,6 +2888,19 @@ export default function App() {
                           className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
                         >
                           <span className="text-sm">📄</span> Regolamento del Club
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (!currentCoachId) {
+                              alert('Seleziona un profilo operatore prima di accedere al Database Contatti.');
+                            } else {
+                              setIsContactsDbOpen(true);
+                            }
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">🗂️</span> Database Contatti
                         </button>
                         <div className="border-t border-slate-100 my-1.5 pt-1.5" />
                         <button
@@ -7857,6 +8013,490 @@ export default function App() {
                   Chiudi Dettaglio
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal: CONTACTS DATABASE */}
+      {isContactsDbOpen && (() => {
+        const activeCoach = coaches.find(c => c.id === currentCoachId);
+        if (!activeCoach) return null;
+
+        // Filter contacts by search query
+        const filteredContacts = contacts.filter(c => {
+          if (!searchContactQuery.trim()) return true;
+          const query = searchContactQuery.toLowerCase();
+          return (
+            c.contactName.toLowerCase().includes(query) ||
+            (c.phone && c.phone.toLowerCase().includes(query)) ||
+            c.productsPurchased.toLowerCase().includes(query) ||
+            c.notes.toLowerCase().includes(query)
+          );
+        });
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800 flex flex-col max-h-[92vh]">
+              
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🗂️</span>
+                  <div className="text-left">
+                    <h3 className="font-display font-extrabold text-sm tracking-wide uppercase">Database Contatti Privato</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato visibile solo a te
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsContactsDbOpen(false);
+                    handleCancelContactEdit();
+                  }}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  
+                  {/* Left Column: Add / Edit Form */}
+                  <div className="lg:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-3xs text-left">
+                    <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                      {editingContactId ? '✏️ Modifica Contatto' : '➕ Nuovo Contatto'}
+                    </h4>
+                    
+                    <form onSubmit={handleSaveContact} className="space-y-4">
+                      {/* Name */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                          Nome Contatto *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newContactName}
+                          onChange={(e) => setNewContactName(e.target.value)}
+                          placeholder="es. Mario Rossi"
+                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                        />
+                      </div>
+
+                      {/* Cellulare */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                          Cellulare (WhatsApp)
+                        </label>
+                        <input
+                          type="tel"
+                          value={newContactPhone}
+                          onChange={(e) => setNewContactPhone(e.target.value)}
+                          placeholder="es. +39 340 123 4567"
+                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                        />
+                      </div>
+
+                      {/* Skin Date */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                          Data Skin
+                        </label>
+                        <input
+                          type="date"
+                          value={newContactSkinDate}
+                          onChange={(e) => setNewContactSkinDate(e.target.value)}
+                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                        />
+                      </div>
+
+                      {/* Checkboxes Group */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3.5">
+                        <span className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                          Interesse
+                        </span>
+                        
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                            <span>📊</span> Valutazione
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={newContactEvaluation}
+                            onChange={(e) => setNewContactEvaluation(e.target.checked)}
+                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                            <span>ℹ️</span> Info Attività
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={newContactActivityInfo}
+                            onChange={(e) => setNewContactActivityInfo(e.target.checked)}
+                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                            <span>🏃</span> Sport
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={newContactSport}
+                            onChange={(e) => setNewContactSport(e.target.checked)}
+                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Products */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                          Prodotti Acquistati
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={newContactProducts}
+                          onChange={(e) => setNewContactProducts(e.target.value)}
+                          placeholder="es. Formula 1, Aloe, Infuso"
+                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                          Note / Dettagli
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={newContactNotes}
+                          onChange={(e) => setNewContactNotes(e.target.value)}
+                          placeholder="es. Preferenze, prossimi appuntamenti..."
+                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
+                        />
+                      </div>
+
+                      {/* Buttons */}
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="submit"
+                          disabled={isSavingContact}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+                        >
+                          {isSavingContact ? 'Salvataggio...' : (editingContactId ? 'Salva Modifiche' : 'Aggiungi Contatto')}
+                        </button>
+                        {editingContactId && (
+                          <button
+                            type="button"
+                            onClick={handleCancelContactEdit}
+                            className="px-3 bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                          >
+                            Annulla
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Right Column: Contacts Table List */}
+                  <div className="lg:col-span-8 flex flex-col h-full space-y-4">
+                    
+                    {/* Search & Statistics Bar */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                      <div className="relative w-full sm:max-w-xs text-left">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                        <input
+                          type="text"
+                          value={searchContactQuery}
+                          onChange={(e) => setSearchContactQuery(e.target.value)}
+                          placeholder="Cerca contatto o prodotti..."
+                          className="w-full pl-9 pr-4 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
+                        />
+                      </div>
+                      <div className="flex gap-4 text-xs font-bold text-slate-500">
+                        <span>Contatti totali: <strong className="text-slate-800">{contacts.length}</strong></span>
+                        <span>•</span>
+                        <span>Trovati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Table Container */}
+                    <div className="border border-slate-150 rounded-2xl overflow-hidden bg-white shadow-3xs flex-1 max-h-[50vh] lg:max-h-[55vh] overflow-y-auto">
+                      {filteredContacts.length === 0 ? (
+                        <div className="p-12 text-center text-slate-400 space-y-2">
+                          <span className="text-3xl block">📁</span>
+                          <p className="text-xs font-bold">Nessun contatto trovato nel database.</p>
+                          <p className="text-[10px] text-slate-400">Inizia inserendo un contatto nel modulo a sinistra.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-slate-800 min-w-[700px]">
+                            <thead>
+                              <tr className="bg-slate-100 border-b border-slate-150 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                                <th className="p-3.5 pl-4">Nome Contatto</th>
+                                <th className="p-3.5">Cellulare</th>
+                                <th className="p-3.5">Data Skin</th>
+                                <th className="p-3.5 text-center w-24">Valutazione</th>
+                                <th className="p-3.5 text-center w-24">Info Attività</th>
+                                <th className="p-3.5 text-center w-24">Sport</th>
+                                <th className="p-3.5">Prodotti Acquistati</th>
+                                <th className="p-3.5">Note</th>
+                                <th className="p-3.5 text-right pr-4 w-24">Azioni</th>
+                                <th className="p-3.5 text-center w-14 pr-4">WhatsApp</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-xs">
+                              {filteredContacts.map((contact) => (
+                                <tr 
+                                  key={contact.id} 
+                                  className={`hover:bg-slate-50/50 transition-colors ${editingContactId === contact.id ? 'bg-amber-50/40' : ''}`}
+                                >
+                                  <td className="p-3.5 pl-4 font-black text-slate-900">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedContactForDetail(contact)}
+                                      className="hover:text-emerald-600 text-left transition-colors cursor-pointer outline-none focus:underline"
+                                      title="Visualizza dettagli completi"
+                                    >
+                                      {contact.contactName}
+                                    </button>
+                                  </td>
+                                  <td className="p-3.5 font-semibold text-slate-700 font-mono">
+                                    {contact.phone || <span className="text-slate-300 italic">—</span>}
+                                  </td>
+                                  <td className="p-3.5 text-slate-600 font-mono font-medium">
+                                    {contact.skinDate ? new Date(contact.skinDate).toLocaleDateString('it-IT') : '-'}
+                                  </td>
+                                  
+                                  {/* Checkboxes Displays: only show checkmarks */}
+                                  <td className="p-3.5 text-center">
+                                    {contact.evaluation ? (
+                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-200">—</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3.5 text-center">
+                                    {contact.activityInfo ? (
+                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-200">—</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3.5 text-center">
+                                    {contact.sport ? (
+                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-200">—</span>
+                                    )}
+                                  </td>
+
+                                  <td className="p-3.5 text-slate-600 max-w-[150px] truncate font-medium" title={contact.productsPurchased}>
+                                    {contact.productsPurchased || <span className="text-slate-300 italic">nessuno</span>}
+                                  </td>
+                                  <td className="p-3.5 text-slate-600 max-w-[180px] truncate font-medium" title={contact.notes}>
+                                    {contact.notes || <span className="text-slate-300">—</span>}
+                                  </td>
+                                  <td className="p-3.5 text-right pr-4 space-x-2">
+                                    <button
+                                      onClick={() => handleEditContactClick(contact)}
+                                      className="text-slate-400 hover:text-amber-600 font-bold transition-colors cursor-pointer text-[11px]"
+                                      title="Modifica contatto"
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteContact(contact.id)}
+                                      className="text-slate-400 hover:text-red-600 font-bold transition-colors cursor-pointer text-[11px]"
+                                      title="Elimina contatto"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </td>
+                                  <td className="p-3.5 text-center pr-4">
+                                    {contact.phone ? (() => {
+                                      const cleaned = contact.phone.replace(/\D/g, '');
+                                      const formatted = (cleaned.length === 10 && cleaned.startsWith('3')) ? '39' + cleaned : cleaned;
+                                      return (
+                                        <a
+                                          href={`https://wa.me/${formatted}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                                          title="Apri chat WhatsApp"
+                                        >
+                                          <svg className="w-4.5 h-4.5 fill-emerald-600" viewBox="0 0 24 24">
+                                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.062 5.248 5.311 0 11.786 0c3.137.001 6.086 1.222 8.303 3.442 2.218 2.22 3.437 5.17 3.437 8.307-.005 6.486-5.253 11.732-11.73 11.732-2.008-.002-3.98-.517-5.732-1.496L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.316 0 9.64-4.32 9.643-9.637.002-2.578-1.002-5.001-2.825-6.825C16.467 2.328 14.048 1.326 11.47 1.326 6.155 1.326 1.83 5.645 1.828 10.963c0 1.701.447 3.361 1.295 4.837l-.953 3.477 3.564-.934zm11.332-6.52c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                          </svg>
+                                        </a>
+                                      );
+                                    })() : (
+                                      <span className="text-slate-200">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsContactsDbOpen(false);
+                    handleCancelContactEdit();
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Chiudi Archivio
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal: CONTACT DETAILS */}
+      {selectedContactForDetail && (() => {
+        const contact = selectedContactForDetail;
+        const cleanedPhone = contact.phone ? contact.phone.replace(/\D/g, '') : '';
+        const waPhone = (cleanedPhone.length === 10 && cleanedPhone.startsWith('3')) ? '39' + cleanedPhone : cleanedPhone;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800">
+              
+              {/* Header */}
+              <div className="bg-emerald-700 text-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">👤</span>
+                  <h3 className="font-display font-extrabold text-sm tracking-wide uppercase">Scheda Dettagliata Contatto</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedContactForDetail(null)}
+                  className="text-emerald-100 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-5 text-left">
+                {/* Contact Name Header */}
+                <div className="border-b border-slate-100 pb-3">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Nome Contatto</span>
+                  <h4 className="text-xl font-extrabold text-slate-900">{contact.contactName}</h4>
+                </div>
+
+                {/* Grid for Cellulare & Data Skin */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">Cellulare</span>
+                    {contact.phone ? (
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs font-bold text-slate-800 font-mono">{contact.phone}</span>
+                        <a
+                          href={`https://wa.me/${waPhone}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg transition-all w-fit shadow-3xs"
+                        >
+                          <span>💬</span> Chat WhatsApp
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-xs italic text-slate-400 font-semibold">Non inserito</span>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">Data Skin</span>
+                    <span className="text-xs font-bold text-slate-800 font-mono">
+                      {contact.skinDate ? new Date(contact.skinDate).toLocaleDateString('it-IT') : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Interesse Section */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-2.5">Interesse</span>
+                  <div className="flex flex-wrap gap-2">
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${contact.evaluation ? 'bg-emerald-100/70 border-emerald-250 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400 line-through'}`}>
+                      <span>📊</span> Valutazione {contact.evaluation ? '✓' : ''}
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${contact.activityInfo ? 'bg-emerald-100/70 border-emerald-250 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400 line-through'}`}>
+                      <span>ℹ️</span> Info Attività {contact.activityInfo ? '✓' : ''}
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${contact.sport ? 'bg-emerald-100/70 border-emerald-250 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400 line-through'}`}>
+                      <span>🏃</span> Sport {contact.sport ? '✓' : ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Prodotti Acquistati */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">Prodotti Acquistati</span>
+                  <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
+                    {contact.productsPurchased || <span className="italic text-slate-400 font-semibold">Nessun prodotto acquistato registrato.</span>}
+                  </p>
+                </div>
+
+                {/* Note */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">Note / Dettagli</span>
+                  <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
+                    {contact.notes || <span className="italic text-slate-400 font-semibold">Nessuna nota aggiuntiva.</span>}
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleEditContactClick(contact);
+                    setSelectedContactForDetail(null);
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-black px-4 py-2 rounded-xl transition-all shadow-3xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>✏️</span> Modifica Contatto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedContactForDetail(null)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Chiudi Dettagli
+                </button>
+              </div>
+
             </div>
           </div>
         );

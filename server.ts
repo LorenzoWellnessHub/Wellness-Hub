@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -34,6 +34,7 @@ interface DbState {
   utilities?: UtilityItem[];
   earnings?: OperatorEarning[];
   cheques?: MonthlyCheque[];
+  contacts?: Contact[];
 }
 
 let cachedState: DbState | null = null;
@@ -143,6 +144,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.cheques) {
     state.cheques = [];
+  }
+  if (!state.contacts) {
+    state.contacts = [];
   }
   
   // Auto-populate members from bookings if empty
@@ -1709,6 +1713,86 @@ app.post('/api/cheques', async (req, res) => {
 
   await writeDb(db);
   res.json({ success: true, cheques: db.cheques });
+});
+
+// --- OPERATOR CONTACTS DATABASE API ---
+// GET contacts (optionally filtered by coachId)
+app.get('/api/contacts', (req, res) => {
+  const { coachId } = req.query;
+  const db = readDb();
+  let list = db.contacts || [];
+  if (coachId) {
+    list = list.filter(c => c.coachId === coachId);
+  }
+  res.json(list);
+});
+
+// POST or UPDATE a contact
+app.post('/api/contacts', async (req, res) => {
+  const { id, coachId, contactName, phone, skinDate, evaluation, activityInfo, sport, productsPurchased, notes } = req.body;
+  if (!coachId || !contactName) {
+    return res.status(400).json({ error: 'Nome contatto e Coach ID sono obbligatori.' });
+  }
+
+  const db = readDb();
+  if (!db.contacts) {
+    db.contacts = [];
+  }
+
+  const existingIndex = id ? db.contacts.findIndex(c => c.id === id) : -1;
+
+  if (existingIndex !== -1) {
+    // Update existing
+    db.contacts[existingIndex] = {
+      ...db.contacts[existingIndex],
+      contactName,
+      phone: phone || '',
+      skinDate: skinDate || '',
+      evaluation: !!evaluation,
+      activityInfo: !!activityInfo,
+      sport: !!sport,
+      productsPurchased: productsPurchased || '',
+      notes: notes || '',
+      timestamp: Date.now()
+    };
+  } else {
+    // Create new
+    db.contacts.push({
+      id: id || `contact_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      coachId,
+      contactName,
+      phone: phone || '',
+      skinDate: skinDate || '',
+      evaluation: !!evaluation,
+      activityInfo: !!activityInfo,
+      sport: !!sport,
+      productsPurchased: productsPurchased || '',
+      notes: notes || '',
+      timestamp: Date.now()
+    });
+  }
+
+  await writeDb(db);
+  res.json({ success: true, contacts: db.contacts });
+});
+
+// DELETE a contact
+app.delete('/api/contacts/:id', async (req, res) => {
+  const { id } = req.params;
+  const db = readDb();
+  if (!db.contacts) {
+    db.contacts = [];
+  }
+
+  const initialLen = db.contacts.length;
+  db.contacts = db.contacts.filter(c => c.id !== id);
+
+  if (db.contacts.length === initialLen) {
+    return res.status(404).json({ error: 'Contatto non trovato.' });
+  }
+
+  await writeDb(db);
+  res.json({ success: true, contacts: db.contacts });
 });
 
 // Export app for serverless environments (e.g., Vercel)
