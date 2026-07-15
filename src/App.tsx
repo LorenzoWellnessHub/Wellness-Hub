@@ -1783,7 +1783,7 @@ export default function App() {
   // Helper to format WhatsApp links correctly
   const getWhatsAppLink = (phone: string, title: string, message: string) => {
     if (!phone) return '';
-    let cleaned = phone.replace(/\D/g, '');
+    let cleaned = String(phone).replace(/\D/g, '');
     if (cleaned.length === 10 && cleaned.startsWith('3')) {
       cleaned = '39' + cleaned;
     }
@@ -8029,7 +8029,7 @@ export default function App() {
           const query = searchContactQuery.toLowerCase();
           return (
             c.contactName.toLowerCase().includes(query) ||
-            (c.phone && c.phone.toLowerCase().includes(query)) ||
+            (c.phone && String(c.phone).toLowerCase().includes(query)) ||
             c.productsPurchased.toLowerCase().includes(query) ||
             c.notes.toLowerCase().includes(query)
           );
@@ -8331,7 +8331,7 @@ export default function App() {
                                   </td>
                                   <td className="p-3.5 text-center pr-4">
                                     {contact.phone ? (() => {
-                                      const cleaned = contact.phone.replace(/\D/g, '');
+                                      const cleaned = String(contact.phone).replace(/\D/g, '');
                                       const formatted = (cleaned.length === 10 && cleaned.startsWith('3')) ? '39' + cleaned : cleaned;
                                       return (
                                         <a
@@ -8384,7 +8384,7 @@ export default function App() {
       {/* Modal: CONTACT DETAILS */}
       {selectedContactForDetail && (() => {
         const contact = selectedContactForDetail;
-        const cleanedPhone = contact.phone ? contact.phone.replace(/\D/g, '') : '';
+        const cleanedPhone = contact.phone ? String(contact.phone).replace(/\D/g, '') : '';
         const waPhone = (cleanedPhone.length === 10 && cleanedPhone.startsWith('3')) ? '39' + cleanedPhone : cleanedPhone;
 
         return (
