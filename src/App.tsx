@@ -2546,11 +2546,11 @@ export default function App() {
           
           {/* Logo & Brand */}
           <div className="flex items-center gap-4">
-            <div className="relative w-20 h-20 flex items-center justify-center bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm p-1">
+            <div className="relative w-20 h-20 flex items-center justify-center bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm p-0">
               <img 
                 src={logoUrl} 
                 alt="The Wellness Hub Logo" 
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   // Fallback to text initials icon if image has trouble loading
@@ -2993,11 +2993,11 @@ export default function App() {
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200/80 p-8 space-y-6 animate-scale-up">
               
               <div className="text-center space-y-3">
-                <div className="inline-flex overflow-hidden rounded-3xl border border-slate-200 shadow-md w-36 h-36 mx-auto bg-white p-2">
+                <div className="inline-flex overflow-hidden rounded-3xl border border-slate-200 shadow-md w-36 h-36 mx-auto bg-white p-0">
                   <img 
                     src={logoUrl} 
                     alt="The Wellness Hub Logo" 
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 </div>
@@ -6254,11 +6254,11 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className="bg-white border-t border-slate-200 mt-auto py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-3">
-        <div className="w-14 h-14 bg-white rounded-xl border border-slate-200/80 p-0.5 shadow-2xs hover:scale-105 transition-all">
+        <div className="w-14 h-14 bg-white rounded-xl border border-slate-200/80 p-0 shadow-2xs hover:scale-105 transition-all">
           <img 
             src={logoUrl} 
             alt="The Wellness Hub Logo" 
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
         </div>
