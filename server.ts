@@ -1496,7 +1496,7 @@ app.get('/api/public-bookings/slots', (req, res) => {
 
 // POST a new public client booking
 app.post('/api/public-bookings', async (req, res) => {
-  const { slotId, coachId, guestName, phone, notes } = req.body;
+  const { slotId, coachId, guestName, phone, notes, partySize } = req.body;
   if (!slotId || !coachId || !guestName || !phone) {
     return res.status(400).json({ error: 'Tutti i campi (nome, telefono, orario) sono obbligatori.' });
   }
@@ -1508,12 +1508,14 @@ app.post('/api/public-bookings', async (req, res) => {
     return res.status(400).json({ error: 'Coach non trovato.' });
   }
 
+  const requestedSize = partySize === 2 ? 2 : 1;
+
   const computedAllBookings = computeBookingsWithStatus(db.bookings);
   const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
   const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
 
-  if (confirmedCount >= 15) {
-    return res.status(400).json({ error: 'Spiacenti, questo orario è appena diventato al completo. Scegli un altro orario.' });
+  if (confirmedCount + requestedSize > 15) {
+    return res.status(400).json({ error: `Spiacenti, questo orario non ha abbastanza postazioni libere (${15 - confirmedCount} disponibili). Scegli un altro orario.` });
   }
 
   if (!db.members) db.members = [];
@@ -1573,17 +1575,41 @@ app.post('/api/public-bookings', async (req, res) => {
 
   const cleanPhone = phone.trim();
   const cleanNotes = notes ? notes.trim() : '';
-  
-  const newBooking: Booking = {
-    id: `booking_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    slotId,
-    coachId,
-    guestName: guestName.trim(),
-    notes: `Prenotato autonomamente tramite Link Cliente. Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
-    timestamp: Date.now(),
-  };
 
-  db.bookings.push(newBooking);
+  const bookingsCreated: Booking[] = [];
+  const timestamp = Date.now();
+
+  if (requestedSize === 2) {
+    const b1: Booking = {
+      id: `booking_${timestamp}_1_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId,
+      guestName: `${guestName.trim()} (Ospite 1)`,
+      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 1). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+      timestamp,
+    };
+    const b2: Booking = {
+      id: `booking_${timestamp}_2_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId,
+      guestName: `${guestName.trim()} (Ospite 2)`,
+      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 2). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+      timestamp,
+    };
+    db.bookings.push(b1, b2);
+    bookingsCreated.push(b1, b2);
+  } else {
+    const b1: Booking = {
+      id: `booking_${timestamp}_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId,
+      guestName: guestName.trim(),
+      notes: `Prenotato autonomamente tramite Link Cliente. Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+      timestamp,
+    };
+    db.bookings.push(b1);
+    bookingsCreated.push(b1);
+  }
 
   if (!db.contacts) db.contacts = [];
   const contactExists = db.contacts.some(c => c.coachId === coachId && c.phone === cleanPhone);
@@ -1601,7 +1627,7 @@ app.post('/api/public-bookings', async (req, res) => {
       activityInfo: false,
       sport: false,
       productsPurchased: '',
-      notes: 'Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso.',
+      notes: `Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso${requestedSize === 2 ? ' (Gruppo di 2 persone)' : ''}.`,
       timestamp: Date.now()
     });
   }
@@ -1618,10 +1644,14 @@ app.post('/api/public-bookings', async (req, res) => {
     friendlyDate = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   } catch (err) {}
 
+  const bookingDetailsMsg = requestedSize === 2 
+    ? `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) ha prenotato per 2 PERSONE (occupando 2 postazioni)` 
+    : `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) si è prenotato`;
+
   db.notifications.push({
     id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    title: '🎉 Nuova Prenotazione da Link Cliente',
-    message: `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) si è prenotato autonomamente per il Trattamento Viso del ${friendlyDate} alle ore ${timeStr} usando il tuo link prenotazione!`,
+    title: requestedSize === 2 ? '🎉 Nuova Prenotazione Doppia da Link Cliente' : '🎉 Nuova Prenotazione da Link Cliente',
+    message: `${bookingDetailsMsg} autonomamente per il Trattamento Viso del ${friendlyDate} alle ore ${timeStr} usando il tuo link prenotazione!`,
     senderName: 'Prenotazioni Web',
     senderId: 'system',
     recipientId: coachId,
@@ -1631,7 +1661,7 @@ app.post('/api/public-bookings', async (req, res) => {
 
   await writeDb(db);
 
-  res.json({ success: true, booking: newBooking });
+  res.json({ success: true, bookings: bookingsCreated });
 });
 
 // PUT (edit) a booking

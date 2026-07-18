@@ -45,6 +45,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
 
   // Booking Form State
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
+  const [partySize, setPartySize] = useState<1 | 2>(1);
   const [guestName, setGuestName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -127,7 +128,8 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
           coachId,
           guestName: guestName.trim(),
           phone: phone.trim(),
-          notes: notes.trim()
+          notes: notes.trim(),
+          partySize
         })
       });
 
@@ -231,7 +233,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
             <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
               Prenotazione Completata!
             </span>
-            <h2 className="text-2xl font-display font-black text-slate-900 tracking-tight">Coccole in Arrivo!</h2>
+            <h2 className="text-2xl font-display font-black text-slate-900 tracking-tight">Prenotazione Confermata!</h2>
             <p className="text-sm text-slate-500">
               Grazie <strong>{guestName}</strong>, la tua prenotazione è stata registrata con successo e inserita in agenda.
             </p>
@@ -250,6 +252,15 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
               <User className="w-5 h-5 text-slate-400 shrink-0" />
               <span className="text-sm font-medium">Coach: {coachInfo.name}</span>
             </div>
+            <div className="flex items-center gap-3 text-slate-700">
+              <div className="flex -space-x-1 text-slate-400 shrink-0">
+                <User className="w-4 h-4" />
+                {partySize === 2 && <User className="w-4 h-4" />}
+              </div>
+              <span className="text-sm font-medium text-slate-700">
+                Prenotato per: <span className="font-bold text-emerald-600">{partySize} {partySize === 2 ? 'persone' : 'persona'}</span>
+              </span>
+            </div>
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
@@ -260,6 +271,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
             onClick={() => {
               setSuccess(false);
               setSelectedSlot(null);
+              setPartySize(1);
               setGuestName('');
               setPhone('');
               setNotes('');
@@ -357,8 +369,58 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                 </div>
               ) : (
                 <>
+                  {/* Party Size Selector */}
+                  <div className="space-y-2 pb-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Per quante persone prenoti?</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        key="party-size-1"
+                        id="party-size-1"
+                        type="button"
+                        onClick={() => {
+                          setPartySize(1);
+                          // Clear selected slot if it becomes unavailable
+                          if (selectedSlot && selectedSlot.availableStations < 1) {
+                            setSelectedSlot(null);
+                          }
+                        }}
+                        className={`p-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          partySize === 1
+                            ? `${theme.solid} text-white shadow-sm border-transparent`
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        <User className="w-4 h-4" />
+                        1 Persona sola
+                      </button>
+                      <button
+                        key="party-size-2"
+                        id="party-size-2"
+                        type="button"
+                        onClick={() => {
+                          setPartySize(2);
+                          // Clear selected slot if it doesn't support 2 people
+                          if (selectedSlot && selectedSlot.availableStations < 2) {
+                            setSelectedSlot(null);
+                          }
+                        }}
+                        className={`p-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          partySize === 2
+                            ? `${theme.solid} text-white shadow-sm border-transparent`
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex -space-x-1">
+                          <User className="w-3.5 h-3.5 shrink-0" />
+                          <User className="w-3.5 h-3.5 shrink-0" />
+                        </div>
+                        2 Persone (2 postazioni)
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Dates Selection Scroll */}
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Giorni Disponibili</label>
                     <div className="flex flex-wrap gap-2">
                       {uniqueDates.map(dateStr => {
@@ -371,7 +433,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                               setSelectedDate(dateStr);
                               setSelectedSlot(null); // reset selected slot on date change
                             }}
-                            className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all text-left border ${
+                            className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all text-left border cursor-pointer ${
                               isSelected 
                                 ? `${theme.solid} text-white shadow-md border-transparent` 
                                 : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
@@ -391,25 +453,35 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {slotsForSelectedDate.map(slot => {
                           const isSelected = selectedSlot?.slotId === slot.slotId;
+                          const isAvailable = slot.availableStations >= partySize;
                           return (
                             <button
                               key={slot.slotId}
                               type="button"
+                              disabled={!isAvailable}
                               onClick={() => setSelectedSlot(slot)}
-                              className={`p-4 rounded-2xl border transition-all text-left flex items-center justify-between ${
+                              className={`p-4 rounded-2xl border transition-all text-left flex items-center justify-between cursor-pointer ${
                                 isSelected 
                                   ? `border-slate-800 bg-slate-900 text-white shadow-md` 
-                                  : `border-slate-200 hover:border-slate-300 hover:bg-slate-50 bg-white text-slate-800`
+                                  : isAvailable
+                                    ? `border-slate-200 hover:border-slate-300 hover:bg-slate-50 bg-white text-slate-800`
+                                    : `border-slate-100 bg-slate-50/50 text-slate-400 cursor-not-allowed`
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <Clock className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />
-                                <span className="font-mono font-bold text-sm">{slot.time}</span>
+                                <span className={`font-mono font-bold text-sm ${!isAvailable ? 'line-through opacity-60' : ''}`}>{slot.time}</span>
                               </div>
                               <div className="text-right">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isSelected ? 'text-slate-300' : 'text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5'}`}>
-                                  {slot.availableStations} posti liberi
-                                </span>
+                                {isAvailable ? (
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${isSelected ? 'text-slate-100 bg-slate-800 border-slate-700' : 'text-emerald-600 bg-emerald-50 border border-emerald-100'} rounded-full px-2.5 py-0.5 border`}>
+                                    Disponibile
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider block text-rose-500 bg-rose-50 border border-rose-100 rounded-full px-2.5 py-0.5 border">
+                                    Al completo
+                                  </span>
+                                )}
                               </div>
                             </button>
                           );
