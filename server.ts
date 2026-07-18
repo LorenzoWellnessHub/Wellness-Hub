@@ -1496,7 +1496,7 @@ app.get('/api/public-bookings/slots', (req, res) => {
 
 // POST a new public client booking
 app.post('/api/public-bookings', async (req, res) => {
-  const { slotId, coachId, guestName, phone, notes, partySize } = req.body;
+  const { slotId, coachId, guestName, secondGuestName, phone, notes, partySize } = req.body;
   if (!slotId || !coachId || !guestName || !phone) {
     return res.status(400).json({ error: 'Tutti i campi (nome, telefono, orario) sono obbligatori.' });
   }
@@ -1580,20 +1580,21 @@ app.post('/api/public-bookings', async (req, res) => {
   const timestamp = Date.now();
 
   if (requestedSize === 2) {
+    const sName = secondGuestName && secondGuestName.trim() ? secondGuestName.trim() : `${guestName.trim()} (Ospite 2)`;
     const b1: Booking = {
       id: `booking_${timestamp}_1_${Math.random().toString(36).substr(2, 5)}`,
       slotId,
       coachId,
-      guestName: `${guestName.trim()} (Ospite 1)`,
-      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 1). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+      guestName: guestName.trim(),
+      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 1: ${guestName.trim()}). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
       timestamp,
     };
     const b2: Booking = {
       id: `booking_${timestamp}_2_${Math.random().toString(36).substr(2, 5)}`,
       slotId,
       coachId,
-      guestName: `${guestName.trim()} (Ospite 2)`,
-      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 2). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+      guestName: sName,
+      notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 2: ${sName}). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
       timestamp,
     };
     db.bookings.push(b1, b2);
@@ -1617,6 +1618,10 @@ app.post('/api/public-bookings', async (req, res) => {
     const parts = slotId.split('_');
     const dateStr = parts.length >= 2 ? parts[1] : '';
     
+    const secondGuestNoteStr = (requestedSize === 2 && secondGuestName && secondGuestName.trim()) 
+      ? ` (Insieme a: ${secondGuestName.trim()})` 
+      : (requestedSize === 2 ? ' (Gruppo di 2 persone)' : '');
+
     db.contacts.push({
       id: `contact_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       coachId,
@@ -1627,7 +1632,7 @@ app.post('/api/public-bookings', async (req, res) => {
       activityInfo: false,
       sport: false,
       productsPurchased: '',
-      notes: `Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso${requestedSize === 2 ? ' (Gruppo di 2 persone)' : ''}.`,
+      notes: `Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso${secondGuestNoteStr}.`,
       timestamp: Date.now()
     });
   }
@@ -1644,8 +1649,12 @@ app.post('/api/public-bookings', async (req, res) => {
     friendlyDate = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   } catch (err) {}
 
+  const secondGuestMsgStr = (requestedSize === 2 && secondGuestName && secondGuestName.trim())
+    ? `, Secondo Ospite: "${secondGuestName.trim()}"`
+    : '';
+
   const bookingDetailsMsg = requestedSize === 2 
-    ? `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) ha prenotato per 2 PERSONE (occupando 2 postazioni)` 
+    ? `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) ha prenotato per 2 PERSONE (occupando 2 postazioni)${secondGuestMsgStr}` 
     : `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) si è prenotato`;
 
   db.notifications.push({

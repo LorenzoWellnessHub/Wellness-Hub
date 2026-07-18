@@ -47,6 +47,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
   const [partySize, setPartySize] = useState<1 | 2>(1);
   const [guestName, setGuestName] = useState<string>('');
+  const [secondGuestName, setSecondGuestName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -109,6 +110,10 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
       setError('Inserisci il tuo nome e cognome.');
       return;
     }
+    if (partySize === 2 && !secondGuestName.trim()) {
+      setError('Inserisci il nome e cognome del secondo ospite.');
+      return;
+    }
     if (!phone.trim()) {
       setError('Inserisci un numero di cellulare valido.');
       return;
@@ -127,6 +132,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
           slotId: selectedSlot.slotId,
           coachId,
           guestName: guestName.trim(),
+          secondGuestName: secondGuestName.trim(),
           phone: phone.trim(),
           notes: notes.trim(),
           partySize
@@ -235,7 +241,11 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
             </span>
             <h2 className="text-2xl font-display font-black text-slate-900 tracking-tight">Prenotazione Confermata!</h2>
             <p className="text-sm text-slate-500">
-              Grazie <strong>{guestName}</strong>, la tua prenotazione è stata registrata con successo e inserita in agenda.
+              Grazie <strong>{guestName}</strong>{partySize === 2 && secondGuestName.trim() ? (
+                <> e <strong>{secondGuestName.trim()}</strong>, la vostra prenotazione è stata registrata con successo e inserita in agenda.</>
+              ) : (
+                <>, la tua prenotazione è stata registrata con successo e inserita in agenda.</>
+              )}
             </p>
           </div>
 
@@ -259,6 +269,11 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
               </div>
               <span className="text-sm font-medium text-slate-700">
                 Prenotato per: <span className="font-bold text-emerald-600">{partySize} {partySize === 2 ? 'persone' : 'persona'}</span>
+                {partySize === 2 && secondGuestName.trim() && (
+                  <span className="text-xs text-slate-500 block mt-1 font-normal">
+                    Ospiti: {guestName} & {secondGuestName}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -273,6 +288,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
               setSelectedSlot(null);
               setPartySize(1);
               setGuestName('');
+              setSecondGuestName('');
               setPhone('');
               setNotes('');
             }}
@@ -317,9 +333,6 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
         {/* Intro Card */}
         {coachInfo && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 text-slate-100 font-bold text-8xl pointer-events-none select-none">
-              🌸
-            </div>
             <div className="space-y-3 relative z-10">
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                 <Sparkles className="w-3 h-3 text-emerald-500 animate-pulse" /> Servizio Esclusivo Clienti
@@ -530,6 +543,24 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                   />
                 </div>
               </div>
+
+              {/* Second Guest Name */}
+              {partySize === 2 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-600">Nome e Cognome Secondo Ospite *</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nome e Cognome Ospite"
+                      value={secondGuestName}
+                      onChange={(e) => setSecondGuestName(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:border-slate-900 transition-all text-slate-800 font-medium"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Phone Number */}
               <div className="space-y-1.5">
