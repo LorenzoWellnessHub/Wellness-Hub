@@ -111,7 +111,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
       return;
     }
     if (partySize === 2 && !secondGuestName.trim()) {
-      setError('Inserisci il nome e cognome del secondo ospite.');
+      setError('Inserisci il nome del secondo ospite.');
       return;
     }
     if (!phone.trim()) {
@@ -309,7 +309,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Header Banner */}
       <header className="bg-white border-b border-slate-200 py-5 px-4 sm:px-6 shadow-xs relative z-30">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex items-center">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold shadow-sm">
               WH
@@ -319,12 +319,6 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
               <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Prenotazione Trattamento Viso</p>
             </div>
           </div>
-          <button 
-            onClick={onBackToLogin}
-            className="text-xs text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-xl px-3 py-1.5 font-medium transition-all"
-          >
-            Area Operatori
-          </button>
         </div>
       </header>
 
@@ -548,13 +542,13 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
               {/* Second Guest Name */}
               {partySize === 2 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-600">Nome e Cognome Secondo Ospite *</label>
+                  <label className="text-xs font-bold text-slate-600">Nome Secondo Ospite *</label>
                   <div className="relative">
                     <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
                       required
-                      placeholder="Nome e Cognome Ospite"
+                      placeholder="Solo Nome (es. Giulia)"
                       value={secondGuestName}
                       onChange={(e) => setSecondGuestName(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:border-slate-900 transition-all text-slate-800 font-medium"
