@@ -141,6 +141,8 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [hasDismissedPaymentNotice, setHasDismissedPaymentNotice] = useState<boolean>(false);
   const [alertPaymentChoice, setAlertPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
+  const [isUtilityPaymentModalOpen, setIsUtilityPaymentModalOpen] = useState<boolean>(false);
+  const [utilityPaymentChoice, setUtilityPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
   const [loginSelectedCoach, setLoginSelectedCoach] = useState<Coach | null>(null);
   const [loginPinInput, setLoginPinInput] = useState<string>('');
   const [isSettingInitialPin, setIsSettingInitialPin] = useState<boolean>(false);
@@ -2908,6 +2910,15 @@ export default function App() {
                           className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
                         >
                           <span className="text-sm">📄</span> Regolamento del Club
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsUtilityPaymentModalOpen(true);
+                            setIsUtilityDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center gap-2.5 font-bold text-slate-700 transition-colors"
+                        >
+                          <span className="text-sm">💳</span> Paga Quota
                         </button>
                         <button
                           onClick={() => {
@@ -7988,6 +7999,110 @@ export default function App() {
           </div>
         </div>
       )})}
+
+      {/* Modal: UTILITY PAYMENT ("Paga Quota") */}
+      {isUtilityPaymentModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">💳</span>
+                <div>
+                  <h3 className="font-display font-extrabold text-sm tracking-wide">PAGAMENTO QUOTA CLUB</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">Dettagli e Link Sicuri</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsUtilityPaymentModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 text-left">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Scegli il metodo che preferisci per saldare la quota mensile del club (€{quotaAmount}).
+              </p>
+
+              {/* Tab Selector */}
+              <div className="flex gap-2 border-b border-slate-200/50 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setUtilityPaymentChoice('bonifico')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    utilityPaymentChoice === 'bonifico'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  🏦 Bonifico Bancario
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUtilityPaymentChoice('paypal')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    utilityPaymentChoice === 'paypal'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  🔵 Link PayPal
+                </button>
+              </div>
+
+              {/* Tabs Content */}
+              {utilityPaymentChoice === 'bonifico' ? (
+                <div className="space-y-3 animate-fade-in">
+                  <div className="bg-slate-50/50 p-4.5 rounded-2xl border border-slate-100 space-y-3">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
+                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed text-center font-medium">
+                    Inserisci il tuo nome e cognome e il mese di riferimento nella causale del bonifico.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Puoi effettuare il pagamento online in modo sicuro e immediato tramite PayPal usando il pulsante qui sotto:
+                    </p>
+                    <a
+                      href={paypalUrl || "https://paypal.me/LorenzoWellness"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full text-center block bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition-colors cursor-pointer shadow-sm shadow-blue-600/10"
+                    >
+                      🔗 Apri Link PayPal (€{quotaAmount})
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsUtilityPaymentModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: ANNUAL EARNINGS BREAKDOWN */}
       {isAnnualBreakdownOpen && activeCoach && (() => {
