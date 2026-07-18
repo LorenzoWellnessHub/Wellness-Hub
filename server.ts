@@ -1193,9 +1193,17 @@ app.post('/api/bookings', async (req, res) => {
   const db = readDb();
   
   // Verify coach exists
-  const coachExists = db.coaches.some(c => c.id === coachId);
-  if (!coachExists) {
+  const coach = db.coaches.find(c => c.id === coachId);
+  if (!coach) {
     return res.status(400).json({ error: 'Coach non trovato' });
+  }
+
+  // Check slot restrictions
+  if (!coach.isAdmin && db.slotRestrictions && db.slotRestrictions[slotId]) {
+    const allowedCoachIds = db.slotRestrictions[slotId];
+    if (allowedCoachIds.length > 0 && !allowedCoachIds.includes(coachId)) {
+      return res.status(400).json({ error: 'Spiacenti, questo orario non è abilitato o visibile per questo coach.' });
+    }
   }
 
   const normalizedName = guestName.trim();
@@ -1441,6 +1449,14 @@ app.get('/api/public-bookings/slots', (req, res) => {
         const slotDateTime = new Date(`${dateStr}T${time}:00`);
         if (slotDateTime.getTime() < Date.now()) return;
 
+        // Check if restricted and coach is not in the allowed list
+        if (db.slotRestrictions && db.slotRestrictions[slotId]) {
+          const allowedCoachIds = db.slotRestrictions[slotId];
+          if (allowedCoachIds.length > 0 && !allowedCoachIds.includes(coachId)) {
+            return;
+          }
+        }
+
         const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
         const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
 
@@ -1465,6 +1481,14 @@ app.get('/api/public-bookings/slots', (req, res) => {
           if (!isAlreadyAdded) {
             const slotDateTime = new Date(`${slot.date}T${slot.time}:00`);
             if (slotDateTime.getTime() < Date.now()) return;
+
+            // Check if restricted and coach is not in the allowed list
+            if (db.slotRestrictions && db.slotRestrictions[slot.id]) {
+              const allowedCoachIds = db.slotRestrictions[slot.id];
+              if (allowedCoachIds.length > 0 && !allowedCoachIds.includes(coachId)) {
+                return;
+              }
+            }
 
             const slotBookings = computedAllBookings.filter(b => b.slotId === slot.id);
             const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
@@ -1506,6 +1530,14 @@ app.post('/api/public-bookings', async (req, res) => {
   const coach = db.coaches.find(c => c.id === coachId);
   if (!coach) {
     return res.status(400).json({ error: 'Coach non trovato.' });
+  }
+
+  // Check slot restrictions
+  if (db.slotRestrictions && db.slotRestrictions[slotId]) {
+    const allowedCoachIds = db.slotRestrictions[slotId];
+    if (allowedCoachIds.length > 0 && !allowedCoachIds.includes(coachId)) {
+      return res.status(400).json({ error: 'Spiacenti, questo orario non è abilitato per questo coach.' });
+    }
   }
 
   const requestedSize = partySize === 2 ? 2 : 1;
