@@ -190,6 +190,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
   }
 
   const theme = coachInfo ? getCoachColorTheme(coachInfo.color) : getCoachColorTheme('emerald');
+  const coachFirstName = coachInfo ? coachInfo.name.split(' ')[0] : '';
 
   // Blocked Screen
   if (coachInfo?.isBlocked) {
@@ -206,7 +207,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
           <div className="space-y-2">
             <h2 className="text-xl font-display font-bold text-slate-800">Canale Prenotazioni non Attivo</h2>
             <p className="text-sm text-slate-500 leading-relaxed">
-              Il canale di prenotazione online per il coach <strong>{coachInfo.name}</strong> non è momentaneamente attivo.
+              Il canale di prenotazione online per il coach <strong>{coachFirstName}</strong> non è momentaneamente attivo.
             </p>
           </div>
           <div className="bg-rose-50/50 p-4 rounded-2xl text-xs text-rose-700 border border-rose-100 font-medium leading-relaxed">
@@ -260,7 +261,7 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
             </div>
             <div className="flex items-center gap-3 text-slate-700">
               <User className="w-5 h-5 text-slate-400 shrink-0" />
-              <span className="text-sm font-medium">Coach: {coachInfo.name}</span>
+              <span className="text-sm font-medium">Coach: {coachFirstName}</span>
             </div>
             <div className="flex items-center gap-3 text-slate-700">
               <div className="flex -space-x-1 text-slate-400 shrink-0">
@@ -347,11 +348,11 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
 
             <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 shrink-0 w-full md:w-auto">
               <div className={`w-12 h-12 rounded-xl ${theme.solid} flex items-center justify-center text-white font-display font-black text-lg shadow-sm`}>
-                {coachInfo.name.substring(0, 2).toUpperCase()}
+                {coachFirstName.substring(0, 2).toUpperCase()}
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Il tuo Coach</p>
-                <p className="text-sm font-bold text-slate-800">{coachInfo.name}</p>
+                <p className="text-sm font-bold text-slate-800">{coachFirstName}</p>
                 <p className="text-xs text-slate-500">The Wellness Hub</p>
               </div>
             </div>
