@@ -1320,6 +1320,320 @@ app.post('/api/bookings', async (req, res) => {
   res.json(created || newBooking);
 });
 
+// GET public coach info for booking page
+app.get('/api/public-bookings/coach/:coachId', (req, res) => {
+  const { coachId } = req.params;
+  const db = readDb();
+  const coach = db.coaches.find(c => c.id === coachId);
+  if (!coach) {
+    return res.status(404).json({ error: 'Coach non trovato' });
+  }
+
+  // Check if they have a member associated, and if that member is blocked due to unpaid quotas
+  if (!db.members) db.members = [];
+  const member = db.members.find(m => m.coachId === coachId);
+  
+  let isBlocked = false;
+  let blockedMonthLabel = "";
+
+  if (member) {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+
+    for (let offset = 3; offset >= -1; offset--) {
+      const checkDate = new Date(currentYear, today.getMonth() - offset, 15);
+      const y = checkDate.getFullYear();
+      const mNum = checkDate.getMonth() + 1;
+      const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
+
+      const isPaid = member.payments && member.payments[ymKey] !== false;
+
+      if (!isPaid) {
+        const prevY = mNum === 1 ? y - 1 : y;
+        const prevM = mNum === 1 ? 12 : mNum - 1;
+
+        const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
+        const deadlineDay = Math.min(30, lastDayOfPrevM);
+
+        let isDeadlinePassed = false;
+
+        if (today.getFullYear() > prevY) {
+          isDeadlinePassed = true;
+        } else if (today.getFullYear() === prevY) {
+          if (today.getMonth() + 1 > prevM) {
+            isDeadlinePassed = true;
+          } else if (today.getMonth() + 1 === prevM) {
+            if (today.getDate() > deadlineDay) {
+              isDeadlinePassed = true;
+            }
+          }
+        }
+
+        if (isDeadlinePassed) {
+          isBlocked = true;
+          const itMonths = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+          blockedMonthLabel = `${itMonths[mNum - 1]} ${y}`;
+          break;
+        }
+      }
+    }
+  } else {
+    isBlocked = true;
+    blockedMonthLabel = "Nessun socio associato al profilo Coach";
+  }
+
+  res.json({
+    id: coach.id,
+    name: coach.name,
+    color: coach.color,
+    isBlocked,
+    blockedMonthLabel
+  });
+});
+
+// GET available facial treatment slots for public booking
+app.get('/api/public-bookings/slots', (req, res) => {
+  const { coachId } = req.query;
+  if (!coachId || typeof coachId !== 'string') {
+    return res.status(400).json({ error: 'Coach ID richiesto' });
+  }
+
+  const db = readDb();
+  
+  const coach = db.coaches.find(c => c.id === coachId);
+  if (!coach) {
+    return res.status(404).json({ error: 'Coach non trovato' });
+  }
+
+  const computedAllBookings = computeBookingsWithStatus(db.bookings);
+  
+  const maxFutureWeeks = db.maxFutureWeeks !== undefined ? db.maxFutureWeeks : 2;
+  const limit = maxFutureWeeks === -1 ? 4 : maxFutureWeeks;
+
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const currentMonday = new Date(today.getFullYear(), today.getMonth(), diff);
+
+  const availableSlots: any[] = [];
+
+  for (let weekOffset = 0; weekOffset <= limit; weekOffset++) {
+    const mondayDate = new Date(currentMonday);
+    mondayDate.setDate(currentMonday.getDate() + weekOffset * 7);
+    
+    const weekDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mondayDate);
+      d.setDate(mondayDate.getDate() + i);
+      weekDates.push(d.toISOString().split('T')[0]);
+    }
+
+    const standardDaysIdx = [0, 2, 4];
+    const standardTimes = ['15:00', '17:00', '19:00'];
+
+    standardDaysIdx.forEach(dayIdx => {
+      const dateStr = weekDates[dayIdx];
+      if (!dateStr) return;
+
+      standardTimes.forEach(time => {
+        const slotId = `viso_${dateStr}_${time}`;
+
+        const slotDateTime = new Date(`${dateStr}T${time}:00`);
+        if (slotDateTime.getTime() < Date.now()) return;
+
+        const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
+        const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
+
+        if (confirmedCount < 15) {
+          availableSlots.push({
+            slotId,
+            treatmentType: 'viso',
+            date: dateStr,
+            time,
+            isCustom: false,
+            confirmedCount,
+            availableStations: 15 - confirmedCount
+          });
+        }
+      });
+    });
+
+    if (db.slots) {
+      db.slots.forEach(slot => {
+        if (slot.treatmentType === 'viso' && weekDates.includes(slot.date)) {
+          const isAlreadyAdded = availableSlots.some(s => s.slotId === slot.id);
+          if (!isAlreadyAdded) {
+            const slotDateTime = new Date(`${slot.date}T${slot.time}:00`);
+            if (slotDateTime.getTime() < Date.now()) return;
+
+            const slotBookings = computedAllBookings.filter(b => b.slotId === slot.id);
+            const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
+
+            if (confirmedCount < 15) {
+              availableSlots.push({
+                slotId: slot.id,
+                treatmentType: 'viso',
+                date: slot.date,
+                time: slot.time,
+                isCustom: true,
+                confirmedCount,
+                availableStations: 15 - confirmedCount
+              });
+            }
+          }
+        }
+      });
+    }
+  }
+
+  availableSlots.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return a.time.localeCompare(b.time);
+  });
+
+  res.json(availableSlots);
+});
+
+// POST a new public client booking
+app.post('/api/public-bookings', async (req, res) => {
+  const { slotId, coachId, guestName, phone, notes } = req.body;
+  if (!slotId || !coachId || !guestName || !phone) {
+    return res.status(400).json({ error: 'Tutti i campi (nome, telefono, orario) sono obbligatori.' });
+  }
+
+  const db = readDb();
+
+  const coach = db.coaches.find(c => c.id === coachId);
+  if (!coach) {
+    return res.status(400).json({ error: 'Coach non trovato.' });
+  }
+
+  const computedAllBookings = computeBookingsWithStatus(db.bookings);
+  const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
+  const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
+
+  if (confirmedCount >= 15) {
+    return res.status(400).json({ error: 'Spiacenti, questo orario è appena diventato al completo. Scegli un altro orario.' });
+  }
+
+  if (!db.members) db.members = [];
+  const member = db.members.find(m => m.coachId === coachId);
+  if (!member) {
+    return res.status(400).json({ error: 'Spiacenti, questo coach non può ricevere prenotazioni esterne (nessun socio associato).' });
+  }
+
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  let isBlocked = false;
+  let blockedMonthLabel = "";
+
+  for (let offset = 3; offset >= -1; offset--) {
+    const checkDate = new Date(currentYear, today.getMonth() - offset, 15);
+    const y = checkDate.getFullYear();
+    const mNum = checkDate.getMonth() + 1;
+    const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
+
+    const isPaid = member.payments && member.payments[ymKey] !== false;
+
+    if (!isPaid) {
+      const prevY = mNum === 1 ? y - 1 : y;
+      const prevM = mNum === 1 ? 12 : mNum - 1;
+
+      const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
+      const deadlineDay = Math.min(30, lastDayOfPrevM);
+
+      let isDeadlinePassed = false;
+
+      if (today.getFullYear() > prevY) {
+        isDeadlinePassed = true;
+      } else if (today.getFullYear() === prevY) {
+        if (today.getMonth() + 1 > prevM) {
+          isDeadlinePassed = true;
+        } else if (today.getMonth() + 1 === prevM) {
+          if (today.getDate() > deadlineDay) {
+            isDeadlinePassed = true;
+          }
+        }
+      }
+
+      if (isDeadlinePassed) {
+        isBlocked = true;
+        const itMonths = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+        blockedMonthLabel = `${itMonths[mNum - 1]} ${y}`;
+        break;
+      }
+    }
+  }
+
+  if (isBlocked) {
+    return res.status(403).json({
+      error: `Spiacenti, il coach ${coach.name} non è abilitato a ricevere prenotazioni esterne in questo momento.`
+    });
+  }
+
+  const cleanPhone = phone.trim();
+  const cleanNotes = notes ? notes.trim() : '';
+  
+  const newBooking: Booking = {
+    id: `booking_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    slotId,
+    coachId,
+    guestName: guestName.trim(),
+    notes: `Prenotato autonomamente tramite Link Cliente. Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
+    timestamp: Date.now(),
+  };
+
+  db.bookings.push(newBooking);
+
+  if (!db.contacts) db.contacts = [];
+  const contactExists = db.contacts.some(c => c.coachId === coachId && c.phone === cleanPhone);
+  if (!contactExists) {
+    const parts = slotId.split('_');
+    const dateStr = parts.length >= 2 ? parts[1] : '';
+    
+    db.contacts.push({
+      id: `contact_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      coachId,
+      contactName: guestName.trim(),
+      phone: cleanPhone,
+      skinDate: dateStr,
+      evaluation: false,
+      activityInfo: false,
+      sport: false,
+      productsPurchased: '',
+      notes: 'Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso.',
+      timestamp: Date.now()
+    });
+  }
+
+  if (!db.notifications) db.notifications = [];
+  
+  const parts = slotId.split('_');
+  const dateStr = parts.length >= 2 ? parts[1] : '';
+  const timeStr = parts.length >= 3 ? parts[2] : '';
+  
+  let friendlyDate = dateStr;
+  try {
+    const d = new Date(dateStr);
+    friendlyDate = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  } catch (err) {}
+
+  db.notifications.push({
+    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    title: '🎉 Nuova Prenotazione da Link Cliente',
+    message: `L'ospite "${guestName.trim()}" (Cell: ${cleanPhone}) si è prenotato autonomamente per il Trattamento Viso del ${friendlyDate} alle ore ${timeStr} usando il tuo link prenotazione!`,
+    senderName: 'Prenotazioni Web',
+    senderId: 'system',
+    recipientId: coachId,
+    timestamp: Date.now(),
+    readBy: []
+  });
+
+  await writeDb(db);
+
+  res.json({ success: true, booking: newBooking });
+});
+
 // PUT (edit) a booking
 app.put('/api/bookings/:id', async (req, res) => {
   const { id } = req.params;

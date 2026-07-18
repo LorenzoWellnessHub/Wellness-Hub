@@ -40,6 +40,7 @@ import {
   Upload
 } from 'lucide-react';
 import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './types';
+import PublicClientBooking from './components/PublicClientBooking';
 
 export default function App() {
   // Navigation & context states
@@ -50,6 +51,7 @@ export default function App() {
   const [currentCoachId, setCurrentCoachId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'resoconto'>('dashboard');
   const [selectedCorpoDate, setSelectedCorpoDate] = useState<string>('');
+  const [bookingCoachId, setBookingCoachId] = useState<string | null>(null);
 
   // Members & Weeks persistence states
   const [members, setMembers] = useState<Member[]>([]);
@@ -380,6 +382,10 @@ export default function App() {
   useEffect(() => {
     // Check query params for Stripe checkout results
     const urlParams = new URLSearchParams(window.location.search);
+    const bCoachId = urlParams.get('bookingCoachId');
+    if (bCoachId) {
+      setBookingCoachId(bCoachId);
+    }
     const status = urlParams.get('payment_status');
     const sessionId = urlParams.get('payment_session_id');
     const memberId = urlParams.get('payment_member_id');
@@ -2680,6 +2686,19 @@ export default function App() {
     return count;
   };
 
+  if (bookingCoachId) {
+    return (
+      <PublicClientBooking 
+        coachId={bookingCoachId} 
+        onBackToLogin={() => {
+          setBookingCoachId(null);
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       
@@ -2902,6 +2921,33 @@ export default function App() {
                         >
                           <span className="text-sm">🗂️</span> Database Contatti
                         </button>
+                        {currentCoachId && (
+                          <>
+                            <div className="border-t border-slate-100 my-1.5 pt-1.5" />
+                            <div className="px-3.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              🔗 Prenotazioni Clienti
+                            </div>
+                            <div className="px-3.5 py-1.5 space-y-1.5">
+                              <button
+                                onClick={() => {
+                                  const link = `${window.location.origin}?bookingCoachId=${currentCoachId}`;
+                                  navigator.clipboard.writeText(link)
+                                    .then(() => {
+                                      setSuccessMessage('Link copiato negli appunti!');
+                                      setTimeout(() => setSuccessMessage(''), 3000);
+                                    })
+                                    .catch(() => {
+                                      alert(`Copia il link manualmente: ${link}`);
+                                    });
+                                  setIsUtilityDropdownOpen(false);
+                                }}
+                                className="w-full text-center px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl text-[11px] font-bold transition-all cursor-pointer block"
+                              >
+                                📋 Copia Link Cliente
+                              </button>
+                            </div>
+                          </>
+                        )}
                         <div className="border-t border-slate-100 my-1.5 pt-1.5" />
                         <button
                           id="btn-admin-toggle"
