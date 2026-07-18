@@ -143,6 +143,7 @@ export default function App() {
   const [alertPaymentChoice, setAlertPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
   const [isUtilityPaymentModalOpen, setIsUtilityPaymentModalOpen] = useState<boolean>(false);
   const [utilityPaymentChoice, setUtilityPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
+  const [selectedCalendarOverviewDay, setSelectedCalendarOverviewDay] = useState<string>('all');
   const [loginSelectedCoach, setLoginSelectedCoach] = useState<Coach | null>(null);
   const [loginPinInput, setLoginPinInput] = useState<string>('');
   const [isSettingInitialPin, setIsSettingInitialPin] = useState<boolean>(false);
@@ -4812,141 +4813,200 @@ export default function App() {
             {renderEarningsTracker(isAdminMode)}
 
             {/* 2. Unified Clean Weekly Calendar Overview */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div className="space-y-1">
-                  <h4 className="font-display font-extrabold text-base text-slate-900 flex items-center gap-2">
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4 text-left">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <h4 className="font-display font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
                     <span>🗓️</span> Calendario dei Turni della Settimana
                   </h4>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Vista semplificata e pulita di tutti i turni attivi e dei relativi ospiti registrati nel club.
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Vista compatta e pulita di tutti i turni attivi e degli ospiti registrati nel club.
                   </p>
                 </div>
               </div>
 
               {isLoading ? (
-                <div className="p-12 text-center space-y-4">
-                  <div className="inline-block w-10 h-10 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                <div className="p-10 text-center space-y-3">
+                  <div className="inline-block w-8 h-8 border-3 border-slate-200 border-t-emerald-600 rounded-full animate-spin"></div>
                   <p className="text-xs font-semibold text-slate-500">Aggiornamento del calendario...</p>
                 </div>
               ) : sortedDates.length === 0 ? (
-                <div className="p-12 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200/80">
-                  <span className="text-3xl block">📁</span>
-                  <h5 className="font-bold text-slate-700 text-sm">Nessun turno in questa settimana</h5>
-                  <p className="text-xs text-slate-400 max-w-xs mx-auto">Non sono configurati turni lavorativi standard o flessibili per il periodo selezionato.</p>
+                <div className="p-8 text-center space-y-2.5 bg-slate-50 rounded-2xl border border-dashed border-slate-200/80">
+                  <span className="text-2xl block">📁</span>
+                  <h5 className="font-bold text-slate-700 text-xs">Nessun turno in questa settimana</h5>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">Non sono configurati turni lavorativi standard o flessibili per il periodo selezionato.</p>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {sortedDates.map(dateStr => {
-                    const daySlots = groupedSlots[dateStr] || [];
-                    if (daySlots.length === 0) return null;
+                <div className="space-y-4">
+                  {/* Day Filter navigation pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 -mx-1 px-1 scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCalendarOverviewDay('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                        selectedCalendarOverviewDay === 'all'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <span>🗓️ Tutti</span>
+                    </button>
+                    {sortedDates.map(dateStr => {
+                      const daySlots = groupedSlots[dateStr] || [];
+                      const isSelected = selectedCalendarOverviewDay === dateStr;
+                      const dateObj = new Date(dateStr);
+                      const dayNum = dateObj.getDate();
+                      const dayShort = getItalianDayName(dateStr).substring(0, 3);
 
-                    return (
-                      <div key={dateStr} className="border border-slate-150 rounded-2xl overflow-hidden shadow-2xs">
-                        {/* Day Header Banner inside Calendar */}
-                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-150 flex items-center justify-between">
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-display font-extrabold text-sm text-slate-800">
-                              {getItalianDayName(dateStr)}
-                            </span>
-                            <span className="text-xs font-semibold text-slate-400">
-                              {formatItalianDate(dateStr)}
-                            </span>
-                          </div>
-                          <span className="bg-white border border-slate-200 text-slate-500 font-bold text-[10px] px-2 py-0.5 rounded-lg">
-                            {daySlots.length} {daySlots.length === 1 ? 'turno' : 'turni'}
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => setSelectedCalendarOverviewDay(dateStr)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/80'
+                          }`}
+                        >
+                          <span className="opacity-75 uppercase text-[9px] tracking-tight">{dayShort}</span>
+                          <span className="text-xs font-black">{dayNum}</span>
+                          <span className={`text-[9px] px-1 py-0.1 rounded-md font-bold ${
+                            isSelected 
+                              ? 'bg-emerald-500 text-white' 
+                              : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {daySlots.length}
                           </span>
-                        </div>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                        {/* Slots for this day in a clean layout */}
-                        <div className="divide-y divide-slate-100 bg-white">
-                          {daySlots.map(slot => {
-                            const isFull = slot.confirmedCount >= 15;
-                            return (
-                              <div key={slot.slotId} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/40 transition-colors">
-                                {/* Slot Info */}
-                                <div className="space-y-1.5 min-w-[200px]">
-                                  <div className="flex items-center gap-2">
-                                    <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-lg font-mono flex items-center gap-1 shrink-0">
-                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                      {slot.time}
-                                    </span>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                      isFull 
-                                        ? 'bg-amber-50 border-amber-100 text-amber-700' 
-                                        : 'bg-emerald-50 border-emerald-100 text-emerald-700'
-                                    }`}>
-                                      {isFull ? 'Completo' : 'Posti disponibili'}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-                                    <span>🌸 Trattamento Viso</span>
-                                    <span>•</span>
-                                    <span>{slot.confirmedCount} / 15 confermati</span>
-                                  </div>
+                  {/* Filtered Days list */}
+                  <div className="space-y-4">
+                    {(() => {
+                      const activeOverviewDay = (selectedCalendarOverviewDay === 'all' || sortedDates.includes(selectedCalendarOverviewDay))
+                        ? selectedCalendarOverviewDay
+                        : 'all';
+
+                      return sortedDates
+                        .filter(dateStr => activeOverviewDay === 'all' || dateStr === activeOverviewDay)
+                        .map(dateStr => {
+                          const daySlots = groupedSlots[dateStr] || [];
+                          if (daySlots.length === 0) return null;
+
+                          return (
+                            <div key={dateStr} className="border border-slate-150 rounded-2xl overflow-hidden shadow-3xs bg-white">
+                              {/* Day Header Banner inside Calendar */}
+                              <div className="bg-slate-50/80 px-3.5 py-2 border-b border-slate-150 flex items-center justify-between">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="font-display font-extrabold text-xs text-slate-800 uppercase tracking-wider">
+                                    {getItalianDayName(dateStr)}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-slate-400">
+                                    {formatItalianDate(dateStr)}
+                                  </span>
                                 </div>
-
-                                {/* Progress Bar */}
-                                <div className="hidden lg:block w-40 shrink-0">
-                                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
-                                    <div 
-                                      className={`h-full ${isFull ? 'bg-amber-500' : 'bg-emerald-500'}`} 
-                                      style={{ width: `${Math.min(100, (slot.confirmedCount / 15) * 100)}%` }}
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Guest names list - completely clean read-only */}
-                                <div className="flex-1 text-left">
-                                  {slot.bookings.length === 0 ? (
-                                    <span className="text-xs text-slate-400 italic">Nessun ospite prenotato in questo turno</span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                      {(() => {
-                                        const bookingsByCoach = slot.bookings.reduce((acc, b) => {
-                                          const coach = coaches.find(c => c.id === b.coachId);
-                                          const name = coach ? coach.name : 'Sconosciuto';
-                                          const color = coach ? coach.color : 'slate';
-                                          if (!acc[b.coachId]) {
-                                            acc[b.coachId] = { name, color, count: 0, riservaCount: 0 };
-                                          }
-                                          if (b.status === 'riserva') {
-                                            acc[b.coachId].riservaCount++;
-                                          } else {
-                                            acc[b.coachId].count++;
-                                          }
-                                          return acc;
-                                        }, {} as Record<string, { name: string; color: string; count: number; riservaCount: number }>);
-
-                                        return Object.entries(bookingsByCoach).map(([coachId, info]) => {
-                                          const coachStyles = getCoachColorClasses(info.color);
-                                          return (
-                                            <div 
-                                              key={coachId}
-                                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`}
-                                            >
-                                              <span className={`w-1.5 h-1.5 rounded-full ${coachStyles.solid}`} />
-                                              <span>Coach {info.name}:</span>
-                                              <span className="font-extrabold">{info.count}</span>
-                                              {info.riservaCount > 0 && (
-                                                <span className="text-[10px] opacity-75 font-medium">
-                                                  ({info.riservaCount} in coda)
-                                                </span>
-                                              )}
-                                            </div>
-                                          );
-                                        });
-                                      })()}
-                                    </div>
-                                  )}
-                                </div>
+                                <span className="bg-white border border-slate-200 text-slate-500 font-bold text-[9px] px-2 py-0.2 rounded-md">
+                                  {daySlots.length} {daySlots.length === 1 ? 'turno' : 'turni'}
+                                </span>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+
+                              {/* Slots for this day in a clean layout */}
+                              <div className="divide-y divide-slate-100 bg-white">
+                                {daySlots.map(slot => {
+                                  const isFull = slot.confirmedCount >= 15;
+                                  return (
+                                    <div key={slot.slotId} className="py-2.5 px-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/30 transition-colors">
+                                      {/* Slot Info and Status in one compact block */}
+                                      <div className="flex items-center gap-3 shrink-0">
+                                        <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 shrink-0">
+                                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                          {slot.time}
+                                        </span>
+                                        
+                                        <div className="flex items-center gap-1">
+                                          <strong className="text-[11px] font-extrabold text-slate-800">
+                                            {slot.confirmedCount}/15
+                                          </strong>
+                                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                                            Ospiti
+                                          </span>
+                                        </div>
+
+                                        <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md border uppercase tracking-wider ${
+                                          isFull 
+                                            ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                        }`}>
+                                          {isFull ? 'Full' : 'Ok'}
+                                        </span>
+                                      </div>
+
+                                      {/* Progress Bar (very thin & elegant) */}
+                                      <div className="hidden md:block w-20 shrink-0">
+                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                          <div 
+                                            className={`h-full ${isFull ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                            style={{ width: `${Math.min(100, (slot.confirmedCount / 15) * 100)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Guest / Coach Breakdown list */}
+                                      <div className="flex-1 text-left min-w-0">
+                                        {slot.bookings.length === 0 ? (
+                                          <span className="text-[10px] text-slate-400 italic">Nessun ospite prenotato</span>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {(() => {
+                                              const bookingsByCoach = slot.bookings.reduce((acc, b) => {
+                                                const coach = coaches.find(c => c.id === b.coachId);
+                                                const name = coach ? coach.name : 'Sconosciuto';
+                                                const color = coach ? coach.color : 'slate';
+                                                if (!acc[b.coachId]) {
+                                                  acc[b.coachId] = { name, color, count: 0, riservaCount: 0 };
+                                                }
+                                                if (b.status === 'riserva') {
+                                                  acc[b.coachId].riservaCount++;
+                                                } else {
+                                                  acc[b.coachId].count++;
+                                                }
+                                                return acc;
+                                              }, {} as Record<string, { name: string; color: string; count: number; riservaCount: number }>);
+
+                                              return Object.entries(bookingsByCoach).map(([coachId, info]) => {
+                                                const coachStyles = getCoachColorClasses(info.color);
+                                                return (
+                                                  <div 
+                                                    key={coachId}
+                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold ${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`}
+                                                  >
+                                                    <span className={`w-1 h-1 rounded-full ${coachStyles.solid}`} />
+                                                    <span>{info.name}:</span>
+                                                    <span className="font-extrabold text-slate-900">{info.count}</span>
+                                                    {info.riservaCount > 0 && (
+                                                      <span className="text-[9px] opacity-75 font-semibold">
+                                                        (+{info.riservaCount} ris.)
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                );
+                                              });
+                                            })()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        });
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
