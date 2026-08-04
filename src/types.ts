@@ -125,6 +125,7 @@ export interface Contact {
   evaluation: boolean; // Valutazione
   activityInfo: boolean; // Info Attività
   sport: boolean; // Sport
+  smartboxTagliando?: boolean; // Tagliando Smartbox
   productsPurchased: string; // Prodotti acquistati
   notes: string; // Note
   timestamp: number;

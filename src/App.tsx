@@ -120,6 +120,7 @@ export default function App() {
   const [newContactEvaluation, setNewContactEvaluation] = useState<boolean>(false);
   const [newContactActivityInfo, setNewContactActivityInfo] = useState<boolean>(false);
   const [newContactSport, setNewContactSport] = useState<boolean>(false);
+  const [newContactSmartboxTagliando, setNewContactSmartboxTagliando] = useState<boolean>(false);
   const [newContactProducts, setNewContactProducts] = useState<string>('');
   const [newContactNotes, setNewContactNotes] = useState<string>('');
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
@@ -1320,6 +1321,7 @@ export default function App() {
           evaluation: !!newContactEvaluation,
           activityInfo: !!newContactActivityInfo,
           sport: !!newContactSport,
+          smartboxTagliando: !!newContactSmartboxTagliando,
           productsPurchased: newContactProducts.trim(),
           notes: newContactNotes.trim()
         })
@@ -1341,6 +1343,7 @@ export default function App() {
         setNewContactEvaluation(false);
         setNewContactActivityInfo(false);
         setNewContactSport(false);
+        setNewContactSmartboxTagliando(false);
         setNewContactProducts('');
         setNewContactNotes('');
         setEditingContactId(null);
@@ -1381,6 +1384,7 @@ export default function App() {
     setNewContactEvaluation(contact.evaluation);
     setNewContactActivityInfo(contact.activityInfo);
     setNewContactSport(contact.sport);
+    setNewContactSmartboxTagliando(!!contact.smartboxTagliando);
     setNewContactProducts(contact.productsPurchased);
     setNewContactNotes(contact.notes);
   };
@@ -1393,6 +1397,7 @@ export default function App() {
     setNewContactEvaluation(false);
     setNewContactActivityInfo(false);
     setNewContactSport(false);
+    setNewContactSmartboxTagliando(false);
     setNewContactProducts('');
     setNewContactNotes('');
   };
@@ -8405,7 +8410,8 @@ export default function App() {
             c.contactName.toLowerCase().includes(query) ||
             (c.phone && String(c.phone).toLowerCase().includes(query)) ||
             c.productsPurchased.toLowerCase().includes(query) ||
-            c.notes.toLowerCase().includes(query)
+            c.notes.toLowerCase().includes(query) ||
+            ((query.includes('smartbox') || query.includes('tagliando')) && c.smartboxTagliando)
           );
         });
 
@@ -8530,6 +8536,18 @@ export default function App() {
                             className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
                           />
                         </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                            <span>🎁</span> Tagliando Smartbox
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={newContactSmartboxTagliando}
+                            onChange={(e) => setNewContactSmartboxTagliando(e.target.checked)}
+                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                          />
+                        </div>
                       </div>
 
                       {/* Products */}
@@ -8620,9 +8638,10 @@ export default function App() {
                                 <th className="p-3.5 pl-4">Nome Contatto</th>
                                 <th className="p-3.5">Cellulare</th>
                                 <th className="p-3.5">Data Skin</th>
-                                <th className="p-3.5 text-center w-24">Valutazione</th>
-                                <th className="p-3.5 text-center w-24">Info Attività</th>
-                                <th className="p-3.5 text-center w-24">Sport</th>
+                                <th className="p-3.5 text-center w-20">Valutazione</th>
+                                <th className="p-3.5 text-center w-20">Info Attività</th>
+                                <th className="p-3.5 text-center w-16">Sport</th>
+                                <th className="p-3.5 text-center w-28">Smartbox</th>
                                 <th className="p-3.5">Prodotti Acquistati</th>
                                 <th className="p-3.5">Note</th>
                                 <th className="p-3.5 text-right pr-4 w-24">Azioni</th>
@@ -8673,6 +8692,15 @@ export default function App() {
                                   </td>
                                   <td className="p-3.5 text-center">
                                     {contact.sport ? (
+                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-200">—</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3.5 text-center">
+                                    {contact.smartboxTagliando ? (
                                       <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
                                         ✓
                                       </span>
@@ -8829,6 +8857,9 @@ export default function App() {
                     </div>
                     <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${contact.sport ? 'bg-emerald-100/70 border-emerald-250 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400 line-through'}`}>
                       <span>🏃</span> Sport {contact.sport ? '✓' : ''}
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${contact.smartboxTagliando ? 'bg-emerald-100/70 border-emerald-250 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400 line-through'}`}>
+                      <span>🎁</span> Tagliando Smartbox {contact.smartboxTagliando ? '✓' : ''}
                     </div>
                   </div>
                 </div>

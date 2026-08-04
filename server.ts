@@ -1663,6 +1663,7 @@ app.post('/api/public-bookings', async (req, res) => {
       evaluation: false,
       activityInfo: false,
       sport: false,
+      smartboxTagliando: false,
       productsPurchased: '',
       notes: `Registrato automaticamente da Link Prenotazione Cliente Trattamento Viso${secondGuestNoteStr}.`,
       timestamp: Date.now()
@@ -2114,7 +2115,7 @@ app.get('/api/contacts', (req, res) => {
 
 // POST or UPDATE a contact
 app.post('/api/contacts', async (req, res) => {
-  const { id, coachId, contactName, phone, skinDate, evaluation, activityInfo, sport, productsPurchased, notes } = req.body;
+  const { id, coachId, contactName, phone, skinDate, evaluation, activityInfo, sport, smartboxTagliando, productsPurchased, notes } = req.body;
   if (!coachId || !contactName) {
     return res.status(400).json({ error: 'Nome contatto e Coach ID sono obbligatori.' });
   }
@@ -2136,6 +2137,7 @@ app.post('/api/contacts', async (req, res) => {
       evaluation: !!evaluation,
       activityInfo: !!activityInfo,
       sport: !!sport,
+      smartboxTagliando: !!smartboxTagliando,
       productsPurchased: productsPurchased || '',
       notes: notes || '',
       timestamp: Date.now()
@@ -2151,6 +2153,7 @@ app.post('/api/contacts', async (req, res) => {
       evaluation: !!evaluation,
       activityInfo: !!activityInfo,
       sport: !!sport,
+      smartboxTagliando: !!smartboxTagliando,
       productsPurchased: productsPurchased || '',
       notes: notes || '',
       timestamp: Date.now()
