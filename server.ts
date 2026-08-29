@@ -1169,6 +1169,8 @@ app.get('/api/schedule/summary', (req, res) => {
     weekDates,
     summaries: resultSummaries,
     corpoBookings,
+    allBookings: computedAllBookings,
+    allCustomSlots: db.slots || [],
     coaches: db.coaches,
     slotRestrictions: db.slotRestrictions || {},
     maxFutureWeeks: db.maxFutureWeeks !== undefined ? db.maxFutureWeeks : 2,

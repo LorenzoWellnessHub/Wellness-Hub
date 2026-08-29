@@ -39,8 +39,20 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './types';
+import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './types';
 import PublicClientBooking from './components/PublicClientBooking';
+import { PersonalReport } from './components/PersonalReport';
+import { AdminReport } from './components/AdminReport';
+import { CompactWeeklyCalendar } from './components/CompactWeeklyCalendar';
+import {
+  getItalianDayName,
+  formatItalianDate,
+  formatItalianDateWithYear,
+  formatItalianMonth,
+  parseBookingSlotId,
+  getWeekDates,
+} from './utils/dateUtils';
+
 
 export default function App() {
   // Navigation & context states
@@ -48,10 +60,26 @@ export default function App() {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [summaries, setSummaries] = useState<SlotSummary[]>([]);
   const [corpoBookings, setCorpoBookings] = useState<ComputedBooking[]>([]);
+  const [allBookings, setAllBookings] = useState<ComputedBooking[]>([]);
+  const [allCustomSlots, setAllCustomSlots] = useState<Slot[]>([]);
   const [currentCoachId, setCurrentCoachId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'resoconto'>('dashboard');
   const [selectedCorpoDate, setSelectedCorpoDate] = useState<string>('');
   const [bookingCoachId, setBookingCoachId] = useState<string | null>(null);
+
+  // Personal Report states (Coach Dashboard)
+  const [personalReportPeriod, setPersonalReportPeriod] = useState<'daily' | 'monthly'>('daily');
+  const [personalReportDate, setPersonalReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [personalReportMonth, setPersonalReportMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [personalReportSearch, setPersonalReportSearch] = useState<string>('');
+  const [personalReportTypeFilter, setPersonalReportTypeFilter] = useState<'all' | 'viso' | 'corpo'>('all');
+
+  // Admin Report states (Resoconto Tab)
+  const [adminReportPeriod, setAdminReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [adminReportDate, setAdminReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [adminReportMonday, setAdminReportMonday] = useState<string>('');
+  const [adminReportMonth, setAdminReportMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [adminReportSearch, setAdminReportSearch] = useState<string>('');
 
   // Members & Weeks persistence states
   const [members, setMembers] = useState<Member[]>([]);
@@ -261,7 +289,9 @@ export default function App() {
     const day = today.getDay();
     const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust if Sunday
     const monday = new Date(today.setDate(diff));
-    setSelectedMonday(monday.toISOString().split('T')[0]);
+    const mondayStr = monday.toISOString().split('T')[0];
+    setSelectedMonday(mondayStr);
+    setAdminReportMonday(mondayStr);
   }, []);
 
   // Set dynamic favicon matching the site logo
@@ -288,6 +318,8 @@ export default function App() {
       const data = await response.json();
       setSummaries(data.summaries || []);
       setCorpoBookings(data.corpoBookings || []);
+      setAllBookings(data.allBookings || []);
+      setAllCustomSlots(data.allCustomSlots || []);
       setCoaches(data.coaches || []);
       setSlotRestrictions(data.slotRestrictions || {});
       setMembers(data.members || []);
@@ -2504,17 +2536,6 @@ export default function App() {
   const colorsList = ['emerald', 'purple', 'amber', 'blue', 'indigo', 'pink', 'rose', 'cyan'];
 
   // Helper to render Italian Day names
-  const getItalianDayName = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const days = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
-    return days[date.getDay()];
-  };
-
-  const formatItalianDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
-  };
-
   const getMemberRegistrationMonth = (m: Member): string => {
     if (m.registrationMonth) {
       return m.registrationMonth;
@@ -2648,18 +2669,6 @@ export default function App() {
   const groupedSlots = getGroupedSlots();
   const sortedDates = Object.keys(groupedSlots).sort();
 
-  // Get all dates (Monday to Sunday) for the selected week
-  const getWeekDates = (mondayStr: string) => {
-    if (!mondayStr) return [];
-    const dates = [];
-    const baseDate = new Date(mondayStr);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(baseDate);
-      d.setDate(baseDate.getDate() + i);
-      dates.push(d.toISOString().split('T')[0]);
-    }
-    return dates;
-  };
   const weekDates = getWeekDates(selectedMonday);
 
   // Selected coach object helper
@@ -4630,391 +4639,27 @@ export default function App() {
 
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-fade-in">
-            {/* 1. Benvenuto & Resoconto Utenza Attiva */}
-            {(() => {
-              const activeCoach = coaches.find(c => c.id === currentCoachId);
-              const coachName = activeCoach ? activeCoach.name : 'Amministratore';
-              const coachColorStyles = activeCoach 
-                ? getCoachColorClasses(activeCoach.color) 
-                : { solid: 'bg-emerald-600', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' };
-
-              // Current YYYY-MM-DD local
-              const today = new Date();
-              const year = today.getFullYear();
-              const month = String(today.getMonth() + 1).padStart(2, '0');
-              const day = String(today.getDate()).padStart(2, '0');
-              const todayStr = `${year}-${month}-${day}`;
-              const currentYM = `${year}-${month}`;
-
-              // Viso bookings today for this coach
-              const todayVisoBookings = summaries.reduce((acc: any[], s) => {
-                if (s.date === todayStr) {
-                  const coachB = (s.bookings || []).filter(b => b.coachId === currentCoachId);
-                  coachB.forEach(b => {
-                    acc.push({
-                      time: s.time,
-                      guestName: b.guestName,
-                      type: 'viso',
-                      status: b.isReserve ? 'Riserva' : 'Confermato',
-                      notes: b.notes
-                    });
-                  });
-                }
-                return acc;
-              }, []);
-
-              // Corpo bookings today for this coach
-              const todayCorpoBookings = corpoBookings.filter(b => {
-                const parts = b.slotId.split('_'); // e.g. slot_2026-07-14_09:00
-                const slotDate = parts[1];
-                return slotDate === todayStr && b.coachId === currentCoachId;
-              }).map(b => {
-                const parts = b.slotId.split('_');
-                return {
-                  time: parts[2] || '?',
-                  guestName: b.guestName,
-                  type: 'corpo',
-                  status: 'Confermato',
-                  notes: b.notes
-                };
-              });
-
-              const allTodayBookings = [...todayVisoBookings, ...todayCorpoBookings].sort((a, b) => a.time.localeCompare(b.time));
-
-              // Monthly counts
-              const monthVisoCount = summaries.reduce((acc, s) => {
-                if (s.date.startsWith(currentYM)) {
-                  return acc + (s.bookings || []).filter(b => b.coachId === currentCoachId).length;
-                }
-                return acc;
-              }, 0);
-
-              const monthCorpoCount = corpoBookings.filter(b => {
-                const parts = b.slotId.split('_');
-                return parts[1] && parts[1].startsWith(currentYM) && b.coachId === currentCoachId;
-              }).length;
-
-              const totalMonthBookings = monthVisoCount + monthCorpoCount;
-
-              return (
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
-                  {/* Title & Welcome bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">👋</span>
-                        <h3 className="font-display font-extrabold text-xl text-slate-950">
-                          Benvenuto, <span className={`${coachColorStyles.text} font-black`}>{coachName}</span>!
-                        </h3>
-                      </div>
-                      <p className="text-xs text-slate-500 font-medium">
-                        Ecco la panoramica in tempo reale del tuo lavoro nel club.
-                      </p>
-                    </div>
-                    {activeCoach && (
-                      <div className={`px-4 py-2 rounded-2xl border text-xs font-bold flex items-center gap-2 shadow-2xs ${coachColorStyles.bg} ${coachColorStyles.border} ${coachColorStyles.text}`}>
-                        <span className={`w-2 h-2 rounded-full ${coachColorStyles.solid} animate-pulse`} />
-                        <span>Profilo Attivo</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Daily & Monthly Stats Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Column 1: Daily Activity */}
-                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">📅</span>
-                          <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Attività Giornaliera</span>
-                        </div>
-                        <span className="bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-600">
-                          Oggi, {formatItalianDate(todayStr)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-display font-black text-4xl text-slate-900">
-                          {allTodayBookings.length}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">prenotati per oggi</span>
-                      </div>
-
-                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                        {allTodayBookings.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic text-center py-4 bg-white/50 rounded-xl border border-dashed border-slate-200/50">
-                            Nessun trattamento o valutazione programmato per oggi.
-                          </p>
-                        ) : (
-                          allTodayBookings.map((b, idx) => (
-                            <div key={idx} className="bg-white border border-slate-200/60 rounded-xl p-3 flex items-center justify-between gap-3 shadow-3xs">
-                              <div className="flex items-center gap-2.5 overflow-hidden">
-                                <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg font-mono">
-                                  {b.time}
-                                </span>
-                                <div className="text-left overflow-hidden">
-                                  <p className="text-xs font-bold text-slate-800 truncate">{b.guestName}</p>
-                                  <p className="text-[10px] text-slate-400 font-semibold truncate">
-                                    {b.notes ? `📝 ${b.notes}` : 'Nessuna nota aggiuntiva'}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
-                                b.type === 'viso'
-                                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
-                                  : 'bg-blue-50 border-blue-100 text-blue-700'
-                              }`}>
-                                {b.type === 'viso' ? '🌸 Viso' : '⚖️ Corpo'}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Column 2: Monthly Activity */}
-                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">📊</span>
-                          <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Attività Mensile</span>
-                        </div>
-                        <span className="bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-600 uppercase">
-                          {new Date().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
-                        </span>
-                      </div>
-
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-display font-black text-4xl text-slate-900">
-                          {totalMonthBookings}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">ospiti totali del mese</span>
-                      </div>
-
-                      {/* Monthly Breakdown Cards */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white border border-slate-200/60 rounded-xl p-3.5 text-center space-y-1.5 shadow-3xs">
-                          <span className="text-lg">🌸</span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trattamenti Viso</span>
-                          <strong className="text-xl font-extrabold text-slate-800 block leading-none">{monthVisoCount}</strong>
-                        </div>
-                        <div className="bg-white border border-slate-200/60 rounded-xl p-3.5 text-center space-y-1.5 shadow-3xs">
-                          <span className="text-lg">⚖️</span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Valutazioni Corporee</span>
-                          <strong className="text-xl font-extrabold text-slate-800 block leading-none">{monthCorpoCount}</strong>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] text-slate-400 text-center font-medium">
-                        I dati di lavoro visualizzati in questa sezione fanno riferimento esclusivamente al profilo attivo e sono a puro scopo informativo.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            {/* 1. Benvenuto & Resoconto Personale */}
+            <PersonalReport
+              currentCoachId={currentCoachId}
+              coaches={coaches}
+              summaries={summaries}
+              corpoBookings={corpoBookings}
+              allBookings={allBookings}
+              getCoachColorClasses={getCoachColorClasses}
+            />
 
             {/* Operator earnings tracker under the welcome/active stats report */}
             {renderEarningsTracker(isAdminMode)}
 
             {/* 2. Unified Clean Weekly Calendar Overview */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4 text-left">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="space-y-0.5">
-                  <h4 className="font-display font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
-                    <span>🗓️</span> Calendario dei Turni della Settimana
-                  </h4>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    Vista compatta e pulita di tutti i turni attivi e degli ospiti registrati nel club.
-                  </p>
-                </div>
-              </div>
-
-              {isLoading ? (
-                <div className="p-10 text-center space-y-3">
-                  <div className="inline-block w-8 h-8 border-3 border-slate-200 border-t-emerald-600 rounded-full animate-spin"></div>
-                  <p className="text-xs font-semibold text-slate-500">Aggiornamento del calendario...</p>
-                </div>
-              ) : sortedDates.length === 0 ? (
-                <div className="p-8 text-center space-y-2.5 bg-slate-50 rounded-2xl border border-dashed border-slate-200/80">
-                  <span className="text-2xl block">📁</span>
-                  <h5 className="font-bold text-slate-700 text-xs">Nessun turno in questa settimana</h5>
-                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">Non sono configurati turni lavorativi standard o flessibili per il periodo selezionato.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Day Filter navigation pills */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 -mx-1 px-1 scrollbar-none">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCalendarOverviewDay('all')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
-                        selectedCalendarOverviewDay === 'all'
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <span>🗓️ Tutti</span>
-                    </button>
-                    {sortedDates.map(dateStr => {
-                      const daySlots = groupedSlots[dateStr] || [];
-                      const isSelected = selectedCalendarOverviewDay === dateStr;
-                      const dateObj = new Date(dateStr);
-                      const dayNum = dateObj.getDate();
-                      const dayShort = getItalianDayName(dateStr).substring(0, 3);
-
-                      return (
-                        <button
-                          key={dateStr}
-                          type="button"
-                          onClick={() => setSelectedCalendarOverviewDay(dateStr)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border ${
-                            isSelected
-                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/80'
-                          }`}
-                        >
-                          <span className="opacity-75 uppercase text-[9px] tracking-tight">{dayShort}</span>
-                          <span className="text-xs font-black">{dayNum}</span>
-                          <span className={`text-[9px] px-1 py-0.1 rounded-md font-bold ${
-                            isSelected 
-                              ? 'bg-emerald-500 text-white' 
-                              : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {daySlots.length}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Filtered Days list */}
-                  <div className="space-y-4">
-                    {(() => {
-                      const activeOverviewDay = (selectedCalendarOverviewDay === 'all' || sortedDates.includes(selectedCalendarOverviewDay))
-                        ? selectedCalendarOverviewDay
-                        : 'all';
-
-                      return sortedDates
-                        .filter(dateStr => activeOverviewDay === 'all' || dateStr === activeOverviewDay)
-                        .map(dateStr => {
-                          const daySlots = groupedSlots[dateStr] || [];
-                          if (daySlots.length === 0) return null;
-
-                          return (
-                            <div key={dateStr} className="border border-slate-150 rounded-2xl overflow-hidden shadow-3xs bg-white">
-                              {/* Day Header Banner inside Calendar */}
-                              <div className="bg-slate-50/80 px-3.5 py-2 border-b border-slate-150 flex items-center justify-between">
-                                <div className="flex items-baseline gap-2">
-                                  <span className="font-display font-extrabold text-xs text-slate-800 uppercase tracking-wider">
-                                    {getItalianDayName(dateStr)}
-                                  </span>
-                                  <span className="text-[10px] font-semibold text-slate-400">
-                                    {formatItalianDate(dateStr)}
-                                  </span>
-                                </div>
-                                <span className="bg-white border border-slate-200 text-slate-500 font-bold text-[9px] px-2 py-0.2 rounded-md">
-                                  {daySlots.length} {daySlots.length === 1 ? 'turno' : 'turni'}
-                                </span>
-                              </div>
-
-                              {/* Slots for this day in a clean layout */}
-                              <div className="divide-y divide-slate-100 bg-white">
-                                {daySlots.map(slot => {
-                                  const isFull = slot.confirmedCount >= 15;
-                                  return (
-                                    <div key={slot.slotId} className="py-2.5 px-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/30 transition-colors">
-                                      {/* Slot Info and Status in one compact block */}
-                                      <div className="flex items-center gap-3 shrink-0">
-                                        <span className="bg-slate-100 text-slate-800 text-xs font-bold px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 shrink-0">
-                                          <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                          {slot.time}
-                                        </span>
-                                        
-                                        <div className="flex items-center gap-1">
-                                          <strong className="text-[11px] font-extrabold text-slate-800">
-                                            {slot.confirmedCount}/15
-                                          </strong>
-                                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                                            Ospiti
-                                          </span>
-                                        </div>
-
-                                        <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md border uppercase tracking-wider ${
-                                          isFull 
-                                            ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                                        }`}>
-                                          {isFull ? 'Full' : 'Ok'}
-                                        </span>
-                                      </div>
-
-                                      {/* Progress Bar (very thin & elegant) */}
-                                      <div className="hidden md:block w-20 shrink-0">
-                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                          <div 
-                                            className={`h-full ${isFull ? 'bg-amber-500' : 'bg-emerald-500'}`} 
-                                            style={{ width: `${Math.min(100, (slot.confirmedCount / 15) * 100)}%` }}
-                                          />
-                                        </div>
-                                      </div>
-
-                                      {/* Guest / Coach Breakdown list */}
-                                      <div className="flex-1 text-left min-w-0">
-                                        {slot.bookings.length === 0 ? (
-                                          <span className="text-[10px] text-slate-400 italic">Nessun ospite prenotato</span>
-                                        ) : (
-                                          <div className="flex flex-wrap gap-1.5">
-                                            {(() => {
-                                              const bookingsByCoach = slot.bookings.reduce((acc, b) => {
-                                                const coach = coaches.find(c => c.id === b.coachId);
-                                                const name = coach ? coach.name : 'Sconosciuto';
-                                                const color = coach ? coach.color : 'slate';
-                                                if (!acc[b.coachId]) {
-                                                  acc[b.coachId] = { name, color, count: 0, riservaCount: 0 };
-                                                }
-                                                if (b.status === 'riserva') {
-                                                  acc[b.coachId].riservaCount++;
-                                                } else {
-                                                  acc[b.coachId].count++;
-                                                }
-                                                return acc;
-                                              }, {} as Record<string, { name: string; color: string; count: number; riservaCount: number }>);
-
-                                              return Object.entries(bookingsByCoach).map(([coachId, info]) => {
-                                                const coachStyles = getCoachColorClasses(info.color);
-                                                return (
-                                                  <div 
-                                                    key={coachId}
-                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold ${coachStyles.bg} ${coachStyles.border} ${coachStyles.text}`}
-                                                  >
-                                                    <span className={`w-1 h-1 rounded-full ${coachStyles.solid}`} />
-                                                    <span>{info.name}:</span>
-                                                    <span className="font-extrabold text-slate-900">{info.count}</span>
-                                                    {info.riservaCount > 0 && (
-                                                      <span className="text-[9px] opacity-75 font-semibold">
-                                                        (+{info.riservaCount} ris.)
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                );
-                                              });
-                                            })()}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        });
-                    })()}
-                  </div>
-                </div>
-              )}
-            </div>
+            <CompactWeeklyCalendar
+              isLoading={isLoading}
+              groupedSlots={groupedSlots}
+              sortedDates={sortedDates}
+              coaches={coaches}
+              getCoachColorClasses={getCoachColorClasses}
+            />
           </div>
         )}
 
@@ -5890,612 +5535,15 @@ export default function App() {
         )}
 
         {activeTab === 'resoconto' && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Summary Banner */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-display font-extrabold text-lg text-slate-800 flex items-center gap-2">
-                  <span>📊</span> Resoconto e Statistiche di Lavoro
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Analisi completa delle performance del club e resoconto del carico di lavoro individuale di ciascun coach per la settimana del {selectedMonday && formatItalianDate(selectedMonday)}.
-                </p>
-              </div>
-
-              {/* Sub-tab Navigation (Club vs Singoli Coach) */}
-              <div className="bg-slate-100 p-1 rounded-2xl flex items-center self-start md:self-auto border border-slate-200/50 shrink-0">
-                <button
-                  onClick={() => setResocontoSubTab('club')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    resocontoSubTab === 'club'
-                      ? 'bg-white text-emerald-800 shadow-xs font-extrabold border border-slate-200/10'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🏫 Andamento Club
-                </button>
-                <button
-                  onClick={() => setResocontoSubTab('coaches')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    resocontoSubTab === 'coaches'
-                      ? 'bg-white text-emerald-800 shadow-xs font-extrabold border border-slate-200/10'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  👥 Singoli Coach
-                </button>
-              </div>
-            </div>
-
-            {resocontoSubTab === 'club' ? (
-              <>
-                {/* KPI STATS CARDS FOR CLUB */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-100 rounded-2xl p-5 shadow-xs">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">PRENOTAZIONI TOTALI</span>
-                    <span className="font-display font-extrabold text-3xl text-emerald-900 block mt-1">
-                      {(() => {
-                        const visoCount = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                        const corpoCount = corpoBookings.length;
-                        return visoCount + corpoCount;
-                      })()}
-                    </span>
-                    <span className="text-xs text-emerald-700 mt-1.5 block font-semibold">
-                      {summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0)} Viso + {corpoBookings.length} Corporee
-                    </span>
-                  </div>
-
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">CAPACITÀ OCCUPATA VISO</span>
-                    <span className="font-display font-extrabold text-3xl text-slate-800 block mt-1">
-                      {(() => {
-                        const totalVisoSlots = summaries.length;
-                        const totalVisoBookings = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                        const percent = totalVisoSlots > 0 ? Math.round((totalVisoBookings / (totalVisoSlots * 15)) * 100) : 0;
-                        return `${percent}%`;
-                      })()}
-                    </span>
-                    <span className="text-xs text-slate-400 mt-1.5 block">
-                      Media di {summaries.length > 0 ? (summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0) / summaries.length).toFixed(1) : 0} ospiti per turno
-                    </span>
-                  </div>
-
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">DISTRIBUZIONE CARICO</span>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {coaches.map(c => {
-                        const coachVisoBookings = summaries.reduce((acc, s) => {
-                          const slotsWithStatus = s.bookings || [];
-                          const coachCount = slotsWithStatus.filter(b => b.coachId === c.id).length;
-                          return acc + coachCount;
-                        }, 0);
-                        const coachCorpoBookings = corpoBookings.filter(b => b.coachId === c.id).length;
-                        const total = coachVisoBookings + coachCorpoBookings;
-
-                        return (
-                          <span
-                            key={c.id}
-                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 bg-slate-50 border-slate-200 text-slate-700"
-                          >
-                            <span className={`w-2 h-2 rounded-full ${getCoachColorClasses(c.color).solid}`} />
-                            {c.name}: <span className="text-slate-900 font-extrabold">{total}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* DAY BY DAY ACCORDION / GRID */}
-                <div className="space-y-4">
-                  {weekDates.map(dateStr => {
-                    const dayName = getItalianDayName(dateStr);
-                    
-                    const dayVisoSlots = summaries.filter(s => s.date === dateStr);
-                    const dayVisoBookingsCount = dayVisoSlots.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-
-                    const dayCorpoBookings = corpoBookings.filter(b => {
-                      const parts = b.slotId.split('_');
-                      return parts[1] === dateStr;
-                    });
-
-                    const totalDayBookings = dayVisoBookingsCount + dayCorpoBookings.length;
-
-                    return (
-                      <div key={dateStr} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
-                        {/* Day Banner Header */}
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                          <div>
-                            <h4 className="font-display font-extrabold text-base text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                              <span className="text-emerald-600">●</span> {dayName} {formatItalianDate(dateStr)}
-                            </h4>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Totale prenotazioni per oggi: <strong className="text-slate-700">{totalDayBookings}</strong>
-                            </p>
-                          </div>
-                          <div className="flex gap-2 text-xs">
-                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-2.5 py-1 rounded-xl font-bold">
-                              🌸 {dayVisoBookingsCount} Trattamenti Viso
-                            </span>
-                            <span className="bg-purple-50 text-purple-800 border border-purple-100 px-2.5 py-1 rounded-xl font-bold">
-                              ⚖️ {dayCorpoBookings.length} Valutazioni Corporee
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Content Detail */}
-                        {totalDayBookings === 0 ? (
-                          <p className="text-xs text-slate-400 italic py-2">Nessun ospite prenotato per questa giornata.</p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
-                            {/* Viso details */}
-                            <div className="space-y-3 col-span-1">
-                              <h5 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-                                🌸 Trattamenti Viso ({dayVisoBookingsCount} ospiti)
-                              </h5>
-                              {dayVisoSlots.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic">Nessun turno inserito.</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {dayVisoSlots.map(slot => {
-                                    const bList = slot.bookings || [];
-                                    return (
-                                      <div key={slot.slotId} className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5">
-                                        <div className="flex justify-between items-center">
-                                          <span className="text-xs font-bold text-slate-700 font-mono">⏱ {slot.time}</span>
-                                          <span className="text-[10px] font-bold bg-slate-200/60 px-2 py-0.5 rounded-full text-slate-600">
-                                            {bList.length}/15 Posti
-                                          </span>
-                                        </div>
-                                        {bList.length === 0 ? (
-                                          <p className="text-[11px] text-slate-400 italic">Nessun ospite prenotato</p>
-                                        ) : (
-                                          <div className="flex flex-wrap gap-1.5 pt-1">
-                                            {bList.map((b, idx) => {
-                                              const coach = coaches.find(c => c.id === b.coachId);
-                                              return (
-                                                <span
-                                                  key={idx}
-                                                  className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-white border border-slate-200/80 shadow-2xs flex items-center gap-1.5"
-                                                >
-                                                  <span className={`w-1.5 h-1.5 rounded-full ${coach ? getCoachColorClasses(coach.color).solid : 'bg-slate-300'}`} />
-                                                  <strong className="text-slate-800">{b.guestName}</strong>
-                                                  <span className="text-[9px] text-slate-400">({coach?.name || 'Coach'})</span>
-                                                </span>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Corpo details */}
-                            <div className="space-y-3 col-span-1">
-                              <h5 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-                                ⚖️ Valutazioni Corporee ({dayCorpoBookings.length} ospiti)
-                              </h5>
-                              {dayCorpoBookings.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic">Nessuna valutazione prenotata.</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {(() => {
-                                    const sortedDayCorpo = [...dayCorpoBookings].sort((a, b) => {
-                                      const tA = a.slotId.split('_')[2];
-                                      const tB = b.slotId.split('_')[2];
-                                      return tA.localeCompare(tB);
-                                    });
-
-                                    return sortedDayCorpo.map(b => {
-                                      const coach = coaches.find(c => c.id === b.coachId);
-                                      const timeStr = b.slotId.split('_')[2];
-
-                                      return (
-                                        <div key={b.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex items-center justify-between">
-                                          <div className="flex items-center gap-3">
-                                            <span className="text-xs font-bold text-slate-700 font-mono">⏱ {timeStr}</span>
-                                            <div className="space-y-0.5 text-left">
-                                              <h6 className="text-xs font-bold text-slate-900">{b.guestName}</h6>
-                                              {b.notes && <p className="text-[10px] text-slate-400">{b.notes}</p>}
-                                            </div>
-                                          </div>
-                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${coach ? getCoachColorClasses(coach.color).bg + ' ' + getCoachColorClasses(coach.color).text : 'bg-slate-200'}`}>
-                                            {coach?.name || 'Coach'}
-                                          </span>
-                                        </div>
-                                      );
-                                    });
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            ) : (
-              /* DETAILED COACHES STATS VIEW */
-              <div className="space-y-6">
-                {/* Coaches grid overview card */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
-                  <h4 className="font-display font-bold text-base text-slate-800">
-                    Seleziona un Coach per analizzare i suoi numeri nel dettaglio
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    <button
-                      onClick={() => setSelectedResocontoCoachId('all')}
-                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        selectedResocontoCoachId === 'all'
-                          ? 'border-emerald-600 bg-emerald-50/20 text-emerald-950 ring-2 ring-emerald-500/10'
-                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                          <span className="font-bold text-sm">Tutti i Coach</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-1">
-                          Confronto simultaneo di tutte le utenze attive nel club
-                        </p>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-xs text-slate-400">Totale prenotazioni:</span>
-                        <strong className="text-sm text-slate-900 font-extrabold">
-                          {(() => {
-                            const totalViso = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                            const totalCorpo = corpoBookings.length;
-                            return totalViso + totalCorpo;
-                          })()}
-                        </strong>
-                      </div>
-                    </button>
-
-                    {coaches.map(c => {
-                      const stats = (() => {
-                        const visoBookings = summaries.reduce((acc, s) => {
-                          const bList = s.bookings || [];
-                          return acc + bList.filter(b => b.coachId === c.id).length;
-                        }, 0);
-                        const corpoBookingsCount = corpoBookings.filter(b => b.coachId === c.id).length;
-                        const total = visoBookings + corpoBookingsCount;
-                        return { viso: visoBookings, corpo: corpoBookingsCount, total };
-                      })();
-
-                      const totalClubBookings = (() => {
-                        const visoCount = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                        const corpoCount = corpoBookings.length;
-                        return visoCount + corpoCount;
-                      })();
-
-                      const pct = totalClubBookings > 0 ? Math.round((stats.total / totalClubBookings) * 100) : 0;
-                      const coachStyles = getCoachColorClasses(c.color);
-
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => setSelectedResocontoCoachId(c.id)}
-                          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                            selectedResocontoCoachId === c.id
-                              ? `border-emerald-600 bg-emerald-50/10 text-slate-900 ring-2 ring-emerald-500/10`
-                              : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className={`w-2.5 h-2.5 rounded-full ${coachStyles.solid}`} />
-                                <span className="font-bold text-sm text-slate-800">{c.name}</span>
-                              </div>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
-                                {pct}% Lavoro
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-400 mt-1">
-                              {stats.viso} Viso • {stats.corpo} Corporee
-                            </p>
-                          </div>
-                          
-                          {/* Mini Progress bar representing workload */}
-                          <div className="mt-4 space-y-1.5">
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-full ${coachStyles.solid}`}
-                                style={{ width: `${Math.min(pct, 100)}%` }}
-                              />
-                            </div>
-                            <div className="flex justify-between items-center text-[10px] text-slate-400">
-                              <span>Quota club:</span>
-                              <strong className="text-slate-800">{stats.total} prenotati</strong>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Detailed Analysis Segment */}
-                {selectedResocontoCoachId === 'all' ? (
-                  /* COMPARISON TABLE OF ALL COACHES */
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
-                    <h4 className="font-display font-bold text-base text-slate-800 flex items-center gap-2">
-                      <span>⚖️</span> Tabella Comparativa Carico di Lavoro
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      Questo grafico e tabella mettono a confronto l'attività svolta da ciascun coach per capire la distribuzione della forza lavoro nel club.
-                    </p>
-
-                    <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 text-slate-500 font-bold border-b border-slate-100">
-                            <th className="p-4">COACH / UTENTE</th>
-                            <th className="p-4 text-center">TRATTAMENTI VISO</th>
-                            <th className="p-4 text-center">VALUTAZIONI CORPO</th>
-                            <th className="p-4 text-center">PRENOTAZIONI TOTALI</th>
-                            <th className="p-4 text-center">GIORNI ATTIVI</th>
-                            <th className="p-4 text-right">QUOTA LAVORO CLUB</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {coaches.map(c => {
-                            const stats = (() => {
-                              const visoBookings = summaries.reduce((acc, s) => {
-                                const bList = s.bookings || [];
-                                return acc + bList.filter(b => b.coachId === c.id).length;
-                              }, 0);
-                              const corpoBookingsCount = corpoBookings.filter(b => b.coachId === c.id).length;
-                              const total = visoBookings + corpoBookingsCount;
-
-                              // Active Days Computation
-                              const actDays = new Set<string>();
-                              summaries.forEach(s => {
-                                if ((s.bookings || []).some(b => b.coachId === c.id)) actDays.add(s.date);
-                              });
-                              corpoBookings.forEach(b => {
-                                if (b.coachId === c.id) actDays.add(b.slotId.split('_')[1]);
-                              });
-
-                              return { viso: visoBookings, corpo: corpoBookingsCount, total, activeDays: actDays.size };
-                            })();
-
-                            const totalClubBookings = (() => {
-                              const totalViso = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                              const totalCorpo = corpoBookings.length;
-                              return totalViso + totalCorpo;
-                            })();
-
-                            const pct = totalClubBookings > 0 ? Math.round((stats.total / totalClubBookings) * 100) : 0;
-                            const coachStyles = getCoachColorClasses(c.color);
-
-                            return (
-                              <tr key={c.id} className="hover:bg-slate-50/55 transition-colors">
-                                <td className="p-4 flex items-center gap-2.5 font-bold text-slate-800">
-                                  <span className={`w-3 h-3 rounded-full ${coachStyles.solid}`} />
-                                  {c.name}
-                                </td>
-                                <td className="p-4 text-center font-mono font-medium text-slate-600">{stats.viso}</td>
-                                <td className="p-4 text-center font-mono font-medium text-slate-600">{stats.corpo}</td>
-                                <td className="p-4 text-center font-mono font-bold text-slate-900">{stats.total}</td>
-                                <td className="p-4 text-center text-slate-500 font-semibold">{stats.activeDays} gg su 5</td>
-                                <td className="p-4 text-right whitespace-nowrap pr-6">
-                                  <div className="flex items-center justify-end gap-3">
-                                    <span className="font-mono font-bold text-slate-800">{pct}%</span>
-                                    <div className="w-16 bg-slate-100 rounded-full h-2 overflow-hidden">
-                                      <div className={`h-full ${coachStyles.solid}`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  /* SINGLE COACH DETAILED REPORT & PERSONAL CALENDAR */
-                  (() => {
-                    const selectedCoach = coaches.find(c => c.id === selectedResocontoCoachId);
-                    if (!selectedCoach) return null;
-
-                    const coachStyles = getCoachColorClasses(selectedCoach.color);
-                    const stats = (() => {
-                      const visoBookings = summaries.reduce((acc, s) => {
-                        const bList = s.bookings || [];
-                        return acc + bList.filter(b => b.coachId === selectedCoach.id).length;
-                      }, 0);
-                      const corpoBookingsCount = corpoBookings.filter(b => b.coachId === selectedCoach.id).length;
-                      const total = visoBookings + corpoBookingsCount;
-
-                      // Active days
-                      const actDays = new Set<string>();
-                      summaries.forEach(s => {
-                        if ((s.bookings || []).some(b => b.coachId === selectedCoach.id)) actDays.add(s.date);
-                      });
-                      corpoBookings.forEach(b => {
-                        if (b.coachId === selectedCoach.id) actDays.add(b.slotId.split('_')[1]);
-                      });
-
-                      return { viso: visoBookings, corpo: corpoBookingsCount, total, activeDays: actDays.size };
-                    })();
-
-                    const totalClubBookings = (() => {
-                      const totalViso = summaries.reduce((acc, s) => acc + (s.bookingsCount || 0), 0);
-                      const totalCorpo = corpoBookings.length;
-                      return totalViso + totalCorpo;
-                    })();
-
-                    const pct = totalClubBookings > 0 ? Math.round((stats.total / totalClubBookings) * 100) : 0;
-
-                    return (
-                      <div className="space-y-6 animate-scale-up">
-                        {/* Coach Metrics Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                          <div className={`border p-5 rounded-2xl shadow-xs bg-white border-slate-200`}>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PRENOTAZIONI TOTALI</span>
-                            <span className="font-display font-extrabold text-3xl text-slate-800 block mt-1">
-                              {stats.total}
-                            </span>
-                            <span className={`text-[10px] font-bold mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${coachStyles.bg} ${coachStyles.text} border ${coachStyles.border}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${coachStyles.solid}`} />
-                              Coach {selectedCoach.name}
-                            </span>
-                          </div>
-
-                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">TRATTAMENTI VISO</span>
-                            <span className="font-display font-extrabold text-3xl text-slate-800 block mt-1">
-                              {stats.viso}
-                            </span>
-                            <span className="text-xs text-slate-400 mt-2 block">
-                              {stats.total > 0 ? Math.round((stats.viso / stats.total) * 100) : 0}% sul totale individuale
-                            </span>
-                          </div>
-
-                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">VALUTAZIONI CORPO</span>
-                            <span className="font-display font-extrabold text-3xl text-slate-800 block mt-1">
-                              {stats.corpo}
-                            </span>
-                            <span className="text-xs text-slate-400 mt-2 block">
-                              {stats.total > 0 ? Math.round((stats.corpo / stats.total) * 100) : 0}% sul totale individuale
-                            </span>
-                          </div>
-
-                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">QUOTA LAVORO CLUB</span>
-                            <span className="font-display font-extrabold text-3xl text-slate-800 block mt-1">
-                              {pct}%
-                            </span>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mt-2.5">
-                              <div className={`h-full ${coachStyles.solid}`} style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Coach Specific Agenda */}
-                        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <div>
-                              <h4 className="font-display font-extrabold text-base text-slate-800">
-                                📅 Agenda di {selectedCoach.name} per la settimana
-                              </h4>
-                              <p className="text-xs text-slate-400 mt-0.5">
-                                Solo appuntamenti e orari in carico a {selectedCoach.name}.
-                              </p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-500">
-                              Giorni lavorati: <strong className="text-slate-800">{stats.activeDays} su 5</strong>
-                            </span>
-                          </div>
-
-                          <div className="space-y-4">
-                            {weekDates.map(dateStr => {
-                              const dayName = getItalianDayName(dateStr);
-                              
-                              // Filter Viso Bookings for this coach
-                              const dVisoSlots = summaries.filter(s => s.date === dateStr);
-                              const coachDayVisoBookings: Array<{time: string, guestName: string}> = [];
-                              dVisoSlots.forEach(slot => {
-                                const mine = (slot.bookings || []).filter(b => b.coachId === selectedCoach.id);
-                                mine.forEach(b => {
-                                  coachDayVisoBookings.push({ time: slot.time, guestName: b.guestName });
-                                });
-                              });
-
-                              // Filter Corpo Bookings for this coach
-                              const coachDayCorpoBookings = corpoBookings.filter(b => {
-                                const parts = b.slotId.split('_');
-                                return parts[1] === dateStr && b.coachId === selectedCoach.id;
-                              });
-
-                              const hasMine = coachDayVisoBookings.length > 0 || coachDayCorpoBookings.length > 0;
-
-                              return (
-                                <div key={dateStr} className={`p-4 rounded-2xl border transition-all ${hasMine ? 'bg-slate-50/50 border-slate-200' : 'bg-slate-50/10 border-slate-100 opacity-50'}`}>
-                                  <div className="flex justify-between items-center pb-2 border-b border-slate-100/60 mb-2">
-                                    <span className="font-bold text-xs text-slate-700 uppercase font-display">
-                                      {dayName} {formatItalianDate(dateStr)}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-slate-400">
-                                      {hasMine ? `${coachDayVisoBookings.length + coachDayCorpoBookings.length} appuntamenti` : 'Libero'}
-                                    </span>
-                                  </div>
-
-                                  {!hasMine ? (
-                                    <p className="text-[11px] text-slate-400 italic">Nessun appuntamento in carico.</p>
-                                  ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                      {/* Viso column */}
-                                      {coachDayVisoBookings.length > 0 && (
-                                        <div className="space-y-1.5">
-                                          <div className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider">
-                                            🌸 Trattamenti Viso ({coachDayVisoBookings.length})
-                                          </div>
-                                          {coachDayVisoBookings.map((b, idx) => (
-                                            <div key={idx} className="bg-white border border-slate-200/60 rounded-xl p-2.5 flex items-center gap-2.5 shadow-2xs">
-                                              <span className="text-[10px] font-bold font-mono text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
-                                                {b.time}
-                                              </span>
-                                              <span className="text-xs font-bold text-slate-800">{b.guestName}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {/* Corpo column */}
-                                      {coachDayCorpoBookings.length > 0 && (
-                                        <div className="space-y-1.5">
-                                          <div className="text-[9px] font-extrabold text-purple-700 uppercase tracking-wider">
-                                            ⚖️ Valutazioni Corporee ({coachDayCorpoBookings.length})
-                                          </div>
-                                          {coachDayCorpoBookings.map(b => {
-                                            const timeStr = b.slotId.split('_')[2];
-                                            return (
-                                              <div key={b.id} className="bg-white border border-slate-200/60 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
-                                                <div className="flex items-center gap-2.5">
-                                                  <span className="text-[10px] font-bold font-mono text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
-                                                    {timeStr}
-                                                  </span>
-                                                  <span className="text-xs font-bold text-slate-800">{b.guestName}</span>
-                                                </div>
-                                                {b.notes && (
-                                                  <span className="text-[9px] text-slate-400 italic max-w-[120px] truncate" title={b.notes}>
-                                                    {b.notes}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            )}
-
-            {/* Operator earnings tracker at the bottom of Resoconto tab */}
-            <div className="mt-6">
-              {renderEarningsTracker(isAdminMode)}
-            </div>
-          </div>
+          <AdminReport
+            coaches={coaches}
+            summaries={summaries}
+            corpoBookings={corpoBookings}
+            allBookings={allBookings}
+            selectedMonday={selectedMonday}
+            getCoachColorClasses={getCoachColorClasses}
+            renderEarningsTracker={renderEarningsTracker}
+          />
         )}
 
         {/* 6. Advanced Priority Rules Interactive Simulator Visualizer */}
