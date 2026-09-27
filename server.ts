@@ -19,6 +19,7 @@ interface DbState {
   slots: Slot[];
   bookings: Booking[];
   slotRestrictions?: Record<string, string[]>;
+  disabledSlots?: string[];
   adminPassword?: string;
   members?: Member[];
   maxFutureWeeks?: number;
@@ -112,6 +113,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.slotRestrictions) {
     state.slotRestrictions = {};
+  }
+  if (!state.disabledSlots) {
+    state.disabledSlots = [];
   }
   if (!state.adminPassword) {
     state.adminPassword = 'admin123';
@@ -363,9 +367,9 @@ function computeBookingsWithStatus(bookings: Booking[]): ComputedBooking[] {
       return x.timestamp - y.timestamp;
     });
 
-    // Mark status: first 15 are 'confermato', rest are 'riserva'
+    // Mark status: first 12 are 'confermato', rest are 'riserva'
     bookingsWithCoachIndex.forEach((b, sortedIndex) => {
-      const status = sortedIndex < 15 ? 'confermato' : 'riserva';
+      const status = sortedIndex < 12 ? 'confermato' : 'riserva';
       computedBookings.push({
         ...b,
         status,
@@ -382,7 +386,7 @@ app.get('/api/admin/config', (req, res) => {
   res.json({ 
     adminPassword: db.adminPassword || 'admin123',
     maxFutureWeeks: db.maxFutureWeeks !== undefined ? db.maxFutureWeeks : 2,
-    regolamento: db.regolamento || `Benvenuto in The Wellness Hub!\n\n1. Ogni Coach ha la responsabilità di inserire correttamente i propri ospiti.\n2. Si prega di rispettare l'orario di inizio di ogni trattamento per non creare ritardi.\n3. Per i trattamenti Corpo/Viso, la soglia massima è di 15 postazioni contemporanee.\n4. Ogni coach ha una quota prioritaria di 4 ospiti confermati per fascia oraria; oltre questo limite gli ospiti vanno in coda/riserva.\n5. Eventuali cancellazioni devono essere effettuate con almeno 24 ore di preavviso.`,
+    regolamento: db.regolamento || `Benvenuto in The Wellness Hub!\n\n1. Ogni Coach ha la responsabilità di inserire correttamente i propri ospiti.\n2. Si prega di rispettare l'orario di inizio di ogni trattamento per non creare ritardi.\n3. Per i trattamenti Corpo/Viso, la soglia massima è di 12 postazioni contemporanee.\n4. Ogni coach ha una quota prioritaria di 4 ospiti confermati per fascia oraria; oltre questo limite gli ospiti vanno in coda/riserva.\n5. Eventuali cancellazioni devono essere effettuate con almeno 24 ore di preavviso.`,
     events: db.events || [],
     quotaAmount: db.quotaAmount !== undefined ? db.quotaAmount : 30,
     iban: db.iban || "IT12X1234512345123456789012",
@@ -990,17 +994,26 @@ app.get('/api/slots', (req, res) => {
 
 // POST a custom slot (weekly flexible slots)
 app.post('/api/slots', async (req, res) => {
-  const { treatmentType, date, time } = req.body;
+  const { treatmentType, date, time, slotType } = req.body;
   if (!treatmentType || !date || !time) {
     return res.status(400).json({ error: 'Missing slot details' });
   }
   const db = readDb();
+  if (!db.slots) db.slots = [];
+  if (!db.disabledSlots) db.disabledSlots = [];
+
   const id = `${treatmentType}_${date}_${time}`;
   
-  // Check if standard slot or already exists
-  const exists = db.slots.some(s => s.id === id);
-  if (exists) {
-    return res.status(400).json({ error: 'Questo slot esiste già' });
+  // Re-enable if in disabledSlots
+  db.disabledSlots = db.disabledSlots.filter(sId => sId !== id);
+
+  const existingSlot = db.slots.find(s => s.id === id);
+  if (existingSlot) {
+    if (slotType) {
+      existingSlot.slotType = slotType;
+    }
+    await writeDb(db);
+    return res.json(existingSlot);
   }
 
   const newSlot: Slot = {
@@ -1008,19 +1021,115 @@ app.post('/api/slots', async (req, res) => {
     treatmentType,
     date,
     time,
-    isCustom: true
+    isCustom: true,
+    slotType: slotType === 'fisso' ? 'fisso' : 'extra'
   };
   db.slots.push(newSlot);
   await writeDb(db);
   res.json(newSlot);
 });
 
-// DELETE a custom slot
+// POST batch create slots for a day
+app.post('/api/slots/batch', async (req, res) => {
+  const { slots } = req.body;
+  if (!Array.isArray(slots) || slots.length === 0) {
+    return res.status(400).json({ error: 'Nessun turno specificato nella richiesta.' });
+  }
+
+  const db = readDb();
+  if (!db.slots) db.slots = [];
+  if (!db.disabledSlots) db.disabledSlots = [];
+
+  const createdOrUpdated: Slot[] = [];
+
+  for (const s of slots) {
+    const treatmentType = (s.treatmentType || 'viso') as TreatmentType;
+    const date = s.date;
+    const time = s.time;
+    const slotType = s.slotType === 'fisso' ? 'fisso' : 'extra';
+    if (!date || !time) continue;
+
+    const id = `${treatmentType}_${date}_${time}`;
+
+    // Remove from disabled list if it was previously hidden/deleted
+    db.disabledSlots = db.disabledSlots.filter(sId => sId !== id);
+
+    const existingIndex = db.slots.findIndex(slot => slot.id === id);
+    if (existingIndex >= 0) {
+      db.slots[existingIndex].slotType = slotType;
+      createdOrUpdated.push(db.slots[existingIndex]);
+    } else {
+      const newSlot: Slot = {
+        id,
+        treatmentType,
+        date,
+        time,
+        isCustom: true,
+        slotType
+      };
+      db.slots.push(newSlot);
+      createdOrUpdated.push(newSlot);
+    }
+  }
+
+  await writeDb(db);
+  res.json({ success: true, count: createdOrUpdated.length, slots: createdOrUpdated });
+});
+
+// PATCH toggle or set slot type (fisso / extra)
+app.patch('/api/slots/:id/type', async (req, res) => {
+  const { id } = req.params;
+  const { slotType } = req.body;
+  if (slotType !== 'fisso' && slotType !== 'extra') {
+    return res.status(400).json({ error: 'slotType deve essere fisso o extra' });
+  }
+
+  const db = readDb();
+  if (!db.slots) db.slots = [];
+  if (!db.disabledSlots) db.disabledSlots = [];
+
+  // Remove from disabled slots if it was there
+  db.disabledSlots = db.disabledSlots.filter(sId => sId !== id);
+
+  let slot = db.slots.find(s => s.id === id);
+  if (slot) {
+    slot.slotType = slotType;
+  } else {
+    // If standard slot not in db.slots, add it with the new slotType
+    const parts = id.split('_');
+    const treatmentType = (parts[0] || 'viso') as TreatmentType;
+    const date = parts[1] || '';
+    const time = parts[2] || '';
+    slot = {
+      id,
+      treatmentType,
+      date,
+      time,
+      isCustom: false,
+      slotType
+    };
+    db.slots.push(slot);
+  }
+
+  await writeDb(db);
+  res.json({ success: true, slot });
+});
+
+// DELETE a slot (custom or disable standard)
 app.delete('/api/slots/:id', async (req, res) => {
   const { id } = req.params;
   const db = readDb();
+  if (!db.disabledSlots) db.disabledSlots = [];
+
+  // Remove from custom slots
   db.slots = db.slots.filter(s => s.id !== id);
-  // Cascade delete bookings
+
+  // Add to disabledSlots so even standard slot is hidden
+  if (!db.disabledSlots.includes(id)) {
+    db.disabledSlots.push(id);
+  }
+
+  // Cascade delete bookings for this slot
   db.bookings = db.bookings.filter(b => b.slotId !== id);
   await writeDb(db);
   res.json({ success: true });
@@ -1110,17 +1219,27 @@ app.get('/api/schedule/summary', (req, res) => {
       standardTimes.forEach(time => {
         const slotId = `${treatmentType}_${dateStr}_${time}`;
         
+        // Skip if slot is disabled by admin
+        if (db.disabledSlots && db.disabledSlots.includes(slotId)) {
+          return;
+        }
+
         // Find bookings for this slot
         const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
         const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
         const reserveCount = slotBookings.filter(b => b.status === 'riserva').length;
+
+        // Check if overridden in db.slots for slotType
+        const customDef = db.slots.find(s => s.id === slotId);
+        const slotType = customDef?.slotType || 'fisso';
 
         resultSummaries.push({
           slotId,
           treatmentType,
           date: dateStr,
           time,
-          isCustom: false,
+          isCustom: !!customDef,
+          slotType,
           totalBookings: slotBookings.length,
           confirmedCount,
           reserveCount,
@@ -1134,6 +1253,9 @@ app.get('/api/schedule/summary', (req, res) => {
   db.slots.forEach(slot => {
     // If slot falls into this week's dates and is of type 'viso'
     if (slot.treatmentType === 'viso' && weekDates.includes(slot.date)) {
+      if (db.disabledSlots && db.disabledSlots.includes(slot.id)) {
+        return;
+      }
       // Avoid duplication with standard slots just in case
       const isAlreadyAdded = resultSummaries.some(s => s.slotId === slot.id);
       if (!isAlreadyAdded) {
@@ -1147,6 +1269,7 @@ app.get('/api/schedule/summary', (req, res) => {
           date: slot.date,
           time: slot.time,
           isCustom: true,
+          slotType: slot.slotType || 'extra',
           totalBookings: slotBookings.length,
           confirmedCount,
           reserveCount,
@@ -1448,6 +1571,11 @@ app.get('/api/public-bookings/slots', (req, res) => {
       standardTimes.forEach(time => {
         const slotId = `viso_${dateStr}_${time}`;
 
+        // Skip if disabled by admin
+        if (db.disabledSlots && db.disabledSlots.includes(slotId)) {
+          return;
+        }
+
         const slotDateTime = new Date(`${dateStr}T${time}:00`);
         if (slotDateTime.getTime() < Date.now()) return;
 
@@ -1462,15 +1590,19 @@ app.get('/api/public-bookings/slots', (req, res) => {
         const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
         const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
 
-        if (confirmedCount < 15) {
+        const customDef = db.slots?.find(s => s.id === slotId);
+        const slotType = customDef?.slotType || 'fisso';
+
+        if (confirmedCount < 12) {
           availableSlots.push({
             slotId,
             treatmentType: 'viso',
             date: dateStr,
             time,
-            isCustom: false,
+            isCustom: !!customDef,
+            slotType,
             confirmedCount,
-            availableStations: 15 - confirmedCount
+            availableStations: 12 - confirmedCount
           });
         }
       });
@@ -1479,6 +1611,10 @@ app.get('/api/public-bookings/slots', (req, res) => {
     if (db.slots) {
       db.slots.forEach(slot => {
         if (slot.treatmentType === 'viso' && weekDates.includes(slot.date)) {
+          if (db.disabledSlots && db.disabledSlots.includes(slot.id)) {
+            return;
+          }
+
           const isAlreadyAdded = availableSlots.some(s => s.slotId === slot.id);
           if (!isAlreadyAdded) {
             const slotDateTime = new Date(`${slot.date}T${slot.time}:00`);
@@ -1495,15 +1631,16 @@ app.get('/api/public-bookings/slots', (req, res) => {
             const slotBookings = computedAllBookings.filter(b => b.slotId === slot.id);
             const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
 
-            if (confirmedCount < 15) {
+            if (confirmedCount < 12) {
               availableSlots.push({
                 slotId: slot.id,
                 treatmentType: 'viso',
                 date: slot.date,
                 time: slot.time,
                 isCustom: true,
+                slotType: slot.slotType || 'extra',
                 confirmedCount,
-                availableStations: 15 - confirmedCount
+                availableStations: 12 - confirmedCount
               });
             }
           }
@@ -1548,8 +1685,8 @@ app.post('/api/public-bookings', async (req, res) => {
   const slotBookings = computedAllBookings.filter(b => b.slotId === slotId);
   const confirmedCount = slotBookings.filter(b => b.status === 'confermato').length;
 
-  if (confirmedCount + requestedSize > 15) {
-    return res.status(400).json({ error: `Spiacenti, questo orario non ha abbastanza postazioni libere (${15 - confirmedCount} disponibili). Scegli un altro orario.` });
+  if (confirmedCount + requestedSize > 12) {
+    return res.status(400).json({ error: `Spiacenti, questo orario non ha abbastanza postazioni libere (${12 - confirmedCount} disponibili). Scegli un altro orario.` });
   }
 
   if (!db.members) db.members = [];
@@ -2117,7 +2254,27 @@ app.get('/api/contacts', (req, res) => {
 
 // POST or UPDATE a contact
 app.post('/api/contacts', async (req, res) => {
-  const { id, coachId, contactName, phone, skinDate, evaluation, activityInfo, sport, smartboxTagliando, productsPurchased, notes } = req.body;
+  const { 
+    id, 
+    coachId, 
+    contactName, 
+    phone, 
+    skinDate, 
+    evaluation, 
+    activityInfo, 
+    sport, 
+    smartboxTagliando, 
+    productsPurchased, 
+    notes,
+    hasReminder,
+    reminderDays,
+    reminderDate,
+    reminderNote,
+    reminderCreatedAt,
+    reminderCompleted,
+    reminderCompletedAt
+  } = req.body;
+
   if (!coachId || !contactName) {
     return res.status(400).json({ error: 'Nome contatto e Coach ID sono obbligatori.' });
   }
@@ -2142,6 +2299,13 @@ app.post('/api/contacts', async (req, res) => {
       smartboxTagliando: !!smartboxTagliando,
       productsPurchased: productsPurchased || '',
       notes: notes || '',
+      hasReminder: hasReminder !== undefined ? !!hasReminder : db.contacts[existingIndex].hasReminder,
+      reminderDays: reminderDays !== undefined ? (reminderDays ? Number(reminderDays) : undefined) : db.contacts[existingIndex].reminderDays,
+      reminderDate: reminderDate !== undefined ? (reminderDate || '') : db.contacts[existingIndex].reminderDate,
+      reminderNote: reminderNote !== undefined ? (reminderNote || '') : db.contacts[existingIndex].reminderNote,
+      reminderCreatedAt: reminderCreatedAt || db.contacts[existingIndex].reminderCreatedAt || (hasReminder ? Date.now() : undefined),
+      reminderCompleted: reminderCompleted !== undefined ? !!reminderCompleted : db.contacts[existingIndex].reminderCompleted,
+      reminderCompletedAt: reminderCompleted ? (reminderCompletedAt || Date.now()) : (reminderCompleted === false ? undefined : db.contacts[existingIndex].reminderCompletedAt),
       timestamp: Date.now()
     };
   } else {
@@ -2158,12 +2322,84 @@ app.post('/api/contacts', async (req, res) => {
       smartboxTagliando: !!smartboxTagliando,
       productsPurchased: productsPurchased || '',
       notes: notes || '',
+      hasReminder: !!hasReminder,
+      reminderDays: reminderDays ? Number(reminderDays) : undefined,
+      reminderDate: reminderDate || '',
+      reminderNote: reminderNote || '',
+      reminderCreatedAt: hasReminder ? (reminderCreatedAt || Date.now()) : undefined,
+      reminderCompleted: !!reminderCompleted,
+      reminderCompletedAt: reminderCompleted ? (reminderCompletedAt || Date.now()) : undefined,
       timestamp: Date.now()
     });
   }
 
   await writeDb(db);
   res.json({ success: true, contacts: db.contacts });
+});
+
+// PATCH a contact reminder (snooze, complete, update, delete reminder)
+app.patch('/api/contacts/:id/reminder', async (req, res) => {
+  const { id } = req.params;
+  const { 
+    completed, 
+    snoozeDays, 
+    reminderDate, 
+    reminderDays, 
+    reminderNote, 
+    hasReminder, 
+    removeReminder 
+  } = req.body;
+
+  const db = readDb();
+  if (!db.contacts) db.contacts = [];
+
+  const contactIndex = db.contacts.findIndex(c => c.id === id);
+  if (contactIndex === -1) {
+    return res.status(404).json({ error: 'Contatto non trovato.' });
+  }
+
+  const contact = db.contacts[contactIndex];
+
+  if (removeReminder) {
+    contact.hasReminder = false;
+    contact.reminderDays = undefined;
+    contact.reminderDate = undefined;
+    contact.reminderNote = undefined;
+    contact.reminderCompleted = false;
+    contact.reminderCompletedAt = undefined;
+  } else {
+    if (completed !== undefined) {
+      contact.reminderCompleted = !!completed;
+      contact.reminderCompletedAt = completed ? Date.now() : undefined;
+    }
+    if (snoozeDays && typeof snoozeDays === 'number') {
+      const now = new Date();
+      now.setDate(now.getDate() + snoozeDays);
+      contact.reminderDate = now.toISOString().split('T')[0];
+      contact.reminderDays = snoozeDays;
+      contact.reminderCompleted = false;
+      contact.reminderCompletedAt = undefined;
+      contact.hasReminder = true;
+    }
+    if (reminderDate !== undefined) {
+      contact.reminderDate = reminderDate;
+    }
+    if (reminderDays !== undefined) {
+      contact.reminderDays = Number(reminderDays);
+    }
+    if (reminderNote !== undefined) {
+      contact.reminderNote = reminderNote;
+    }
+    if (hasReminder !== undefined) {
+      contact.hasReminder = !!hasReminder;
+    }
+  }
+
+  contact.timestamp = Date.now();
+  db.contacts[contactIndex] = contact;
+  await writeDb(db);
+
+  res.json({ success: true, contact, contacts: db.contacts });
 });
 
 // DELETE a contact

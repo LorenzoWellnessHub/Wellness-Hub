@@ -20,6 +20,7 @@ export interface Slot {
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   isCustom?: boolean; // True if it is a weekly flexible time slot
+  slotType?: 'fisso' | 'extra'; // Turno fisso o turno extra
 }
 
 export interface Booking {
@@ -62,6 +63,7 @@ export interface SlotSummary {
   date: string;
   time: string;
   isCustom: boolean;
+  slotType?: 'fisso' | 'extra';
   totalBookings: number;
   confirmedCount: number;
   reserveCount: number;
@@ -129,6 +131,14 @@ export interface Contact {
   productsPurchased: string; // Prodotti acquistati
   notes: string; // Note
   timestamp: number;
+  // Personal reminder / follow-up fields
+  hasReminder?: boolean;
+  reminderDays?: number; // Chosen number of days (e.g. 3, 7, 14, 21, 30, custom)
+  reminderDate?: string; // Target reminder date: YYYY-MM-DD
+  reminderNote?: string; // Reason / note for the reminder
+  reminderCreatedAt?: number; // Timestamp when reminder was created
+  reminderCompleted?: boolean; // True if user marked as handled/completed
+  reminderCompletedAt?: number; // Timestamp when completed
 }
 
 

@@ -137,7 +137,7 @@ export const AdminReport: React.FC<AdminReportProps> = ({
     const uniqueSlots = new Set(periodVisoBookings.map((b) => b.slotId));
     activeVisoSlotsCount = uniqueSlots.size || 1;
   }
-  const maxPossibleVisoCapacity = Math.max(1, activeVisoSlotsCount * 15);
+  const maxPossibleVisoCapacity = Math.max(1, activeVisoSlotsCount * 12);
   const visoCapacityPercent = Math.min(100, Math.round((periodVisoBookings.length / maxPossibleVisoCapacity) * 100));
 
   // Handlers for date navigation

@@ -1,120 +1,203 @@
 {
-  "bookings": [],
-  "pendingCoachRegistrations": [],
-  "slots": [],
-  "adminPassword": "admin123",
+  "paypalUrl": "https://paypal.me/LorenzoWellness",
   "maxFutureWeeks": 2,
-  "members": [
+  "slotRestrictions": {},
+  "satispayUrl": "+39 333 1234567",
+  "utilities": [],
+  "events": [],
+  "iban": "IT12X1234512345123456789012",
+  "ibanHolder": "Lorenzo Wellness",
+  "earnings": [],
+  "cheques": [],
+  "slots": [
     {
-      "coachId": "coach_1783758911586",
-      "registrationMonth": "2026-07",
-      "payments": {
-        "2026-08": false,
-        "2026-07": true
-      },
-      "id": "member_1783758911586_frbs7",
-      "name": "Test Coach"
+      "isCustom": true,
+      "time": "15:00",
+      "treatmentType": "viso",
+      "slotType": "fisso",
+      "id": "viso_2026-09-28_15:00",
+      "date": "2026-09-28"
     },
     {
-      "name": "Sandro",
-      "id": "member_1783759478774_q134g",
-      "registrationMonth": "2026-07",
+      "isCustom": true,
+      "date": "2026-10-10",
+      "id": "viso_2026-10-10_10:00",
+      "time": "10:00",
+      "slotType": "extra",
+      "treatmentType": "viso"
+    },
+    {
+      "slotType": "extra",
+      "date": "2026-10-10",
+      "id": "viso_2026-10-10_12:00",
+      "treatmentType": "viso",
+      "time": "12:00",
+      "isCustom": true
+    },
+    {
+      "time": "14:30",
+      "slotType": "extra",
+      "treatmentType": "viso",
+      "date": "2026-10-10",
+      "isCustom": true,
+      "id": "viso_2026-10-10_14:30"
+    },
+    {
+      "slotType": "extra",
+      "treatmentType": "viso",
+      "time": "16:00",
+      "id": "viso_2026-10-10_16:00",
+      "isCustom": true,
+      "date": "2026-10-10"
+    }
+  ],
+  "members": [
+    {
+      "id": "member_1783758911586_frbs7",
+      "coachId": "coach_1783758911586",
+      "name": "Test Coach",
       "payments": {
         "2026-08": false,
         "2026-07": true
       },
+      "registrationMonth": "2026-07"
+    },
+    {
+      "registrationMonth": "2026-07",
+      "name": "Sandro",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false
+      },
+      "id": "member_1783759478774_q134g",
       "coachId": "coach_1783759478774"
     },
     {
+      "registrationMonth": "2026-07",
+      "coachId": "coach_1783760358350",
       "id": "member_1783760358350_4132d",
       "name": "Test Coach 123",
-      "coachId": "coach_1783760358350",
-      "registrationMonth": "2026-07",
       "payments": {
         "2026-07": true,
         "2026-08": false
       }
     },
     {
+      "id": "member_1783839911036_0ehol",
       "registrationMonth": "2026-07",
+      "coachId": "coach_1783839911036",
       "payments": {
         "2026-07": true,
         "2026-08": false
       },
-      "coachId": "coach_1783839911036",
-      "name": "prova",
-      "id": "member_1783839911036_0ehol"
+      "name": "prova"
     },
     {
-      "id": "member_1783941485301_jsi9h",
       "name": "Sandro Test",
-      "payments": {
-        "2026-07": true,
-        "2026-08": false
-      },
       "coachId": "coach_1783941485301",
-      "registrationMonth": "2026-07"
+      "registrationMonth": "2026-07",
+      "id": "member_1783941485301_jsi9h",
+      "payments": {
+        "2026-08": false,
+        "2026-07": true
+      }
     }
   ],
-  "slotRestrictions": {},
-  "coaches": [
+  "disabledSlots": [
+    "viso_2026-09-28_10:00"
+  ],
+  "contacts": [
     {
-      "acceptedRules": true,
-      "id": "coach_1",
-      "isAdmin": true,
-      "color": "emerald",
-      "pin": "1234",
-      "name": "Lorenzo"
+      "sport": true,
+      "activityInfo": true,
+      "timestamp": 1790511763651,
+      "contactName": "Lorenzo Fagi",
+      "coachId": "coach_1",
+      "skinDate": "2026-07-15",
+      "evaluation": true,
+      "productsPurchased": "Gel detergente, maschera",
+      "id": "contact_1784094893547_hc9ti",
+      "notes": "",
+      "hasReminder": false,
+      "reminderCompleted": false
     },
     {
-      "name": "Anna",
+      "activityInfo": true,
+      "notes": "",
+      "timestamp": 1784095252315,
+      "phone": "3911824089",
+      "skinDate": "2026-07-15",
+      "coachId": "coach_1",
+      "productsPurchased": "Formula 1, aloe, maschera e collagene",
+      "evaluation": false,
+      "contactName": "Lorenzo Fagi",
+      "id": "contact_1784095252315_hfz83",
+      "sport": true
+    }
+  ],
+  "pendingCoachRegistrations": [],
+  "coaches": [
+    {
+      "pin": "1234",
+      "id": "coach_1",
+      "acceptedRules": true,
+      "color": "emerald",
+      "name": "Lorenzo",
+      "isAdmin": true
+    },
+    {
+      "color": "purple",
       "id": "coach_2",
-      "color": "purple"
+      "name": "Anna"
     },
     {
       "color": "amber",
-      "id": "coach_3",
-      "name": "Marco"
+      "name": "Marco",
+      "id": "coach_3"
     },
     {
-      "name": "Sofia",
+      "color": "blue",
       "id": "coach_4",
-      "color": "blue"
+      "name": "Sofia"
     },
     {
-      "id": "coach_1783758911586",
+      "name": "Test Coach",
       "isAdmin": false,
-      "color": "emerald",
       "pin": "",
-      "name": "Test Coach"
+      "id": "coach_1783758911586",
+      "color": "emerald"
     },
     {
-      "name": "Sandro",
       "pin": "",
+      "isAdmin": false,
+      "name": "Sandro",
       "color": "emerald",
-      "id": "coach_1783759478774",
-      "isAdmin": false
+      "id": "coach_1783759478774"
     },
     {
       "color": "emerald",
       "id": "coach_1783760358350",
       "isAdmin": false,
-      "name": "Test Coach 123",
-      "pin": ""
+      "pin": "",
+      "name": "Test Coach 123"
     },
     {
-      "id": "coach_1783839911036",
+      "name": "prova",
       "isAdmin": false,
-      "color": "emerald",
       "pin": "",
-      "name": "prova"
+      "color": "emerald",
+      "id": "coach_1783839911036"
     },
     {
       "id": "coach_1783941485301",
+      "pin": "",
       "name": "Sandro Test",
       "color": "emerald",
-      "pin": "",
       "isAdmin": false
     }
-  ]
+  ],
+  "adminPassword": "admin123",
+  "notifications": [],
+  "quotaAmount": 30,
+  "bookings": []
 }

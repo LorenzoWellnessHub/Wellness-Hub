@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import logoUrl from './assets/images/wellness_hub_logo_1783331564869.jpg';
 import { 
   Users, 
@@ -65,6 +65,13 @@ export default function App() {
   const [currentCoachId, setCurrentCoachId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'resoconto'>('dashboard');
   const [selectedCorpoDate, setSelectedCorpoDate] = useState<string>('');
+  const [selectedVisoDate, setSelectedVisoDate] = useState<string>('');
+  const [visoViewMode, setVisoViewMode] = useState<'single' | 'all'>('single');
+  const [showMultiSlotModal, setShowMultiSlotModal] = useState<boolean>(false);
+  const [multiSlotDate, setMultiSlotDate] = useState<string>('');
+  const [multiSlotTreatment, setMultiSlotTreatment] = useState<TreatmentType>('viso');
+  const [selectedMultiTimes, setSelectedMultiTimes] = useState<Array<{ time: string, slotType: 'fisso' | 'extra' }>>([]);
+  const [customMultiTimeInput, setCustomMultiTimeInput] = useState<string>('');
   const [bookingCoachId, setBookingCoachId] = useState<string | null>(null);
 
   // Personal Report states (Coach Dashboard)
@@ -154,6 +161,27 @@ export default function App() {
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [isSavingContact, setIsSavingContact] = useState<boolean>(false);
   const [selectedContactForDetail, setSelectedContactForDetail] = useState<Contact | null>(null);
+
+  // Reminders states for personal database
+  const [newContactHasReminder, setNewContactHasReminder] = useState<boolean>(false);
+  const [newContactReminderDays, setNewContactReminderDays] = useState<number>(7);
+  const [newContactReminderDate, setNewContactReminderDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [newContactReminderNote, setNewContactReminderNote] = useState<string>('Follow-up contatto e feedback');
+  const [contactsTabFilter, setContactsTabFilter] = useState<'all' | 'urgent' | 'reminders' | 'completed'>('all');
+  const [isRemindersDrawerOpen, setIsRemindersDrawerOpen] = useState<boolean>(false);
+  const [quickReminderContact, setQuickReminderContact] = useState<Contact | null>(null);
+  const [quickReminderDays, setQuickReminderDays] = useState<number>(7);
+  const [quickReminderDate, setQuickReminderDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [quickReminderNote, setQuickReminderNote] = useState<string>('Follow-up contatto');
+  const [hasDismissedTodayReminderAlert, setHasDismissedTodayReminderAlert] = useState<boolean>(false);
 
   // Payment popup/checkout modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -463,6 +491,8 @@ export default function App() {
   useEffect(() => {
     if (selectedMonday) {
       setSelectedCorpoDate(selectedMonday);
+      setSelectedVisoDate(selectedMonday);
+      setMultiSlotDate(selectedMonday);
     }
   }, [selectedMonday]);
 
@@ -726,6 +756,145 @@ export default function App() {
       setTimeout(() => setSuccessMessage(''), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Impossibile aggiungere il turno.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const standardDayHourList = [
+    '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00',
+    '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30',
+    '19:00', '19:30', '20:00', '20:30'
+  ];
+
+  const handleToggleMultiTime = (time: string, defaultType: 'fisso' | 'extra' = 'fisso') => {
+    setSelectedMultiTimes(prev => {
+      const exists = prev.find(t => t.time === time);
+      if (exists) {
+        return prev.filter(t => t.time !== time);
+      } else {
+        return [...prev, { time, slotType: defaultType }].sort((a, b) => a.time.localeCompare(b.time));
+      }
+    });
+  };
+
+  const handleChangeMultiSlotType = (time: string, newType: 'fisso' | 'extra') => {
+    setSelectedMultiTimes(prev => prev.map(t => t.time === time ? { ...t, slotType: newType } : t));
+  };
+
+  const handleApplyPreset = (preset: 'pomeriggio' | 'mattina' | 'giornata' | 'none') => {
+    if (preset === 'none') {
+      setSelectedMultiTimes([]);
+      return;
+    }
+    if (preset === 'pomeriggio') {
+      setSelectedMultiTimes([
+        { time: '15:00', slotType: 'fisso' },
+        { time: '17:00', slotType: 'fisso' },
+        { time: '19:00', slotType: 'fisso' }
+      ]);
+    } else if (preset === 'mattina') {
+      setSelectedMultiTimes([
+        { time: '09:00', slotType: 'extra' },
+        { time: '10:30', slotType: 'extra' },
+        { time: '12:00', slotType: 'extra' }
+      ]);
+    } else if (preset === 'giornata') {
+      setSelectedMultiTimes([
+        { time: '09:30', slotType: 'extra' },
+        { time: '11:00', slotType: 'extra' },
+        { time: '15:00', slotType: 'fisso' },
+        { time: '17:00', slotType: 'fisso' },
+        { time: '19:00', slotType: 'fisso' }
+      ]);
+    }
+  };
+
+  const handleSetAllSelectedType = (type: 'fisso' | 'extra') => {
+    setSelectedMultiTimes(prev => prev.map(t => ({ ...t, slotType: type })));
+  };
+
+  const handleAddCustomTimeInput = () => {
+    const trimmed = customMultiTimeInput.trim();
+    if (!trimmed) return;
+    if (!/^\d{2}:\d{2}$/.test(trimmed)) {
+      setErrorMessage('Formato orario non valido. Usa HH:MM (es. 16:15)');
+      return;
+    }
+    if (!selectedMultiTimes.some(t => t.time === trimmed)) {
+      setSelectedMultiTimes(prev => [...prev, { time: trimmed, slotType: 'extra' }].sort((a, b) => a.time.localeCompare(b.time)));
+    }
+    setCustomMultiTimeInput('');
+  };
+
+  // Add multiple slots for a day in a single action
+  const handleAddMultiSlots = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!multiSlotDate) {
+      setErrorMessage('Seleziona la data per i turni.');
+      return;
+    }
+    if (selectedMultiTimes.length === 0) {
+      setErrorMessage('Seleziona almeno un orario da aggiungere per questa giornata.');
+      return;
+    }
+
+    setActionLoading(true);
+    setErrorMessage('');
+    try {
+      const response = await fetch('/api/slots/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slots: selectedMultiTimes.map(item => ({
+            treatmentType: multiSlotTreatment,
+            date: multiSlotDate,
+            time: item.time,
+            slotType: item.slotType
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Errore durante la creazione dei turni.');
+      }
+
+      const resData = await response.json();
+      await fetchData();
+      setSelectedVisoDate(multiSlotDate);
+      setVisoViewMode('single');
+      setShowMultiSlotModal(false);
+      setSuccessMessage(`${resData.count || selectedMultiTimes.length} turni salvati con successo per ${formatItalianDate(multiSlotDate)}!`);
+      setSelectedMultiTimes([]);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile aggiungere i turni.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Toggle existing slot between Fisso and Extra
+  const handleToggleSlotType = async (slotId: string, currentType?: 'fisso' | 'extra') => {
+    const newType = (currentType || 'fisso') === 'fisso' ? 'extra' : 'fisso';
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/slots/${encodeURIComponent(slotId)}/type`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotType: newType })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Impossibile aggiornare la tipologia di turno');
+      }
+      await fetchData();
+      setSuccessMessage(`Turno aggiornato come: Turno ${newType === 'fisso' ? 'Fisso' : 'Extra'}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante l\'aggiornamento del turno');
     } finally {
       setActionLoading(false);
     }
@@ -1355,7 +1524,11 @@ export default function App() {
           sport: !!newContactSport,
           smartboxTagliando: !!newContactSmartboxTagliando,
           productsPurchased: newContactProducts.trim(),
-          notes: newContactNotes.trim()
+          notes: newContactNotes.trim(),
+          hasReminder: !!newContactHasReminder,
+          reminderDays: newContactHasReminder ? Number(newContactReminderDays) : undefined,
+          reminderDate: newContactHasReminder ? newContactReminderDate : '',
+          reminderNote: newContactHasReminder ? newContactReminderNote.trim() : ''
         })
       });
 
@@ -1378,6 +1551,12 @@ export default function App() {
         setNewContactSmartboxTagliando(false);
         setNewContactProducts('');
         setNewContactNotes('');
+        setNewContactHasReminder(false);
+        setNewContactReminderDays(7);
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        setNewContactReminderDate(nextWeek.toISOString().split('T')[0]);
+        setNewContactReminderNote('Follow-up contatto e feedback');
         setEditingContactId(null);
         
         setSuccessMessage(editingContactId ? 'Contatto aggiornato con successo!' : 'Contatto aggiunto con successo!');
@@ -1419,6 +1598,16 @@ export default function App() {
     setNewContactSmartboxTagliando(!!contact.smartboxTagliando);
     setNewContactProducts(contact.productsPurchased);
     setNewContactNotes(contact.notes);
+    setNewContactHasReminder(!!contact.hasReminder);
+    setNewContactReminderDays(contact.reminderDays || 7);
+    if (contact.reminderDate) {
+      setNewContactReminderDate(contact.reminderDate);
+    } else {
+      const nextWeek = new Date();
+      nextWeek.setDate(nextWeek.getDate() + (contact.reminderDays || 7));
+      setNewContactReminderDate(nextWeek.toISOString().split('T')[0]);
+    }
+    setNewContactReminderNote(contact.reminderNote || 'Follow-up contatto e feedback');
   };
 
   const handleCancelContactEdit = () => {
@@ -1432,6 +1621,52 @@ export default function App() {
     setNewContactSmartboxTagliando(false);
     setNewContactProducts('');
     setNewContactNotes('');
+    setNewContactHasReminder(false);
+    setNewContactReminderDays(7);
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    setNewContactReminderDate(nextWeek.toISOString().split('T')[0]);
+    setNewContactReminderNote('Follow-up contatto e feedback');
+  };
+
+  const handlePatchReminder = async (contactId: string, updates: { 
+    completed?: boolean; 
+    snoozeDays?: number; 
+    reminderDate?: string; 
+    reminderDays?: number; 
+    reminderNote?: string; 
+    hasReminder?: boolean;
+    removeReminder?: boolean;
+  }) => {
+    try {
+      const response = await fetch(`/api/contacts/${contactId}/reminder`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        await fetchContacts(currentCoachId || undefined);
+        if (selectedContactForDetail && selectedContactForDetail.id === contactId) {
+          if (data.contact) {
+            setSelectedContactForDetail(data.contact);
+          }
+        }
+        const msg = updates.completed 
+          ? 'Promemoria segnato come completato!' 
+          : updates.snoozeDays 
+          ? `Promemoria posticipato di ${updates.snoozeDays} giorni!` 
+          : updates.removeReminder 
+          ? 'Promemoria rimosso.' 
+          : 'Promemoria aggiornato con successo!';
+        setSuccessMessage(msg);
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        throw new Error('Errore durante l\'aggiornamento del promemoria');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Errore aggiornamento promemoria.');
+    }
   };
 
   // Member & Payment Management Handlers
@@ -2691,6 +2926,49 @@ export default function App() {
     return !n.readBy || !n.readBy.includes(currentCoachId);
   }).length;
 
+  // Reminders computed strictly for current coach ("ognuno vede solo i suoi")
+  const coachRemindersList = useMemo(() => {
+    if (!currentCoachId) return [];
+    return contacts
+      .filter(c => c.coachId === currentCoachId && c.hasReminder && c.reminderDate)
+      .map(c => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const target = new Date(c.reminderDate! + 'T00:00:00');
+        const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const isCompleted = !!c.reminderCompleted;
+        const isToday = !isCompleted && diffDays === 0;
+        const isOverdue = !isCompleted && diffDays < 0;
+        const isUpcoming = !isCompleted && diffDays > 0;
+        return {
+          contact: c,
+          diffDays,
+          isCompleted,
+          isToday,
+          isOverdue,
+          isUpcoming,
+          statusLabel: isCompleted ? 'Completato' : isToday ? 'Oggi!' : isOverdue ? `Scaduto (${Math.abs(diffDays)} gg fa)` : `Tra ${diffDays} gg`
+        };
+      })
+      .sort((a, b) => {
+        // Overdue first, then today, then upcoming, completed last
+        if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+        return a.diffDays - b.diffDays;
+      });
+  }, [contacts, currentCoachId]);
+
+  const urgentReminders = useMemo(() => {
+    return coachRemindersList.filter(r => (r.isToday || r.isOverdue) && !r.isCompleted);
+  }, [coachRemindersList]);
+
+  const upcomingReminders = useMemo(() => {
+    return coachRemindersList.filter(r => r.isUpcoming && !r.isCompleted);
+  }, [coachRemindersList]);
+
+  const completedReminders = useMemo(() => {
+    return coachRemindersList.filter(r => r.isCompleted);
+  }, [coachRemindersList]);
+
   // Active coach total bookings this week
   const getCoachWeeklyConfirmedCount = (coachId: string) => {
     let count = 0;
@@ -2856,6 +3134,35 @@ export default function App() {
                 </button>
               )}
 
+              {/* Personal Reminders Bell Button (strictly for logged in coach) */}
+              {isLoggedIn && currentCoachId && (
+                <button
+                  id="btn-personal-reminders"
+                  type="button"
+                  onClick={() => setIsRemindersDrawerOpen(true)}
+                  className={`px-3 py-2 rounded-xl transition-all relative cursor-pointer border flex items-center gap-1.5 text-xs font-bold ${
+                    urgentReminders.length > 0
+                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 shadow-xs ring-2 ring-rose-300 animate-pulse'
+                      : coachRemindersList.filter(r => !r.isCompleted).length > 0
+                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 shadow-2xs'
+                      : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200 shadow-2xs'
+                  }`}
+                  title={`I tuoi promemoria personali (${coachRemindersList.filter(r => !r.isCompleted).length} attivi)`}
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Promemoria</span>
+                  {urgentReminders.length > 0 ? (
+                    <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full min-w-4 text-center">
+                      {urgentReminders.length}
+                    </span>
+                  ) : coachRemindersList.filter(r => !r.isCompleted).length > 0 ? (
+                    <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full min-w-4 text-center">
+                      {coachRemindersList.filter(r => !r.isCompleted).length}
+                    </span>
+                  ) : null}
+                </button>
+              )}
+
               {/* Utility Dropdown (3 lines / hamburger menu) */}
               {(isLoggedIn || isAdminMode) && (
                 <div className="relative">
@@ -2948,6 +3255,28 @@ export default function App() {
                         >
                           <span className="text-sm">🗂️</span> Database Contatti
                         </button>
+                        {currentCoachId && (
+                          <button
+                            onClick={() => {
+                              setIsRemindersDrawerOpen(true);
+                              setIsUtilityDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-50 flex items-center justify-between font-bold text-slate-700 transition-colors"
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <span className="text-sm">🔔</span> Promemoria Personali
+                            </span>
+                            {urgentReminders.length > 0 ? (
+                              <span className="bg-rose-100 text-rose-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                                {urgentReminders.length} oggi
+                              </span>
+                            ) : coachRemindersList.filter(r => !r.isCompleted).length > 0 ? (
+                              <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                {coachRemindersList.filter(r => !r.isCompleted).length}
+                              </span>
+                            ) : null}
+                          </button>
+                        )}
                         {currentCoachId && (
                           <>
                             <div className="border-t border-slate-100 my-1.5 pt-1.5" />
@@ -4609,11 +4938,15 @@ export default function App() {
                   {/* Custom Slot (Flexible Turn) Adder */}
                   {isAdminMode && (
                     <button
-                      onClick={() => setShowCustomSlotModal(true)}
+                      onClick={() => {
+                        setMultiSlotDate(selectedVisoDate || sortedDates[0] || new Date().toISOString().split('T')[0]);
+                        handleApplyPreset('pomeriggio');
+                        setShowMultiSlotModal(true);
+                      }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
-                      Nuovo Turno Settimanale
+                      Aggiungi Turni del Giorno (Multipli)
                     </button>
                   )}
                 </>
@@ -4671,7 +5004,7 @@ export default function App() {
               Algoritmo Automatico di Assegnazione Posti & Riserve (Coda)
             </h3>
             <p className="text-xs text-amber-800 leading-relaxed">
-              Il club mette a disposizione un massimo di <strong>15 postazioni</strong> per ogni fascia oraria di trattamento.
+              Il club mette a disposizione un massimo di <strong>12 postazioni</strong> per ogni fascia oraria di trattamento.
               Per garantire un'assegnazione equa a tutti i coach, l'applicazione applica in tempo reale queste regole:
             </p>
             <ul className="text-xs text-amber-800 space-y-1.5 list-disc pl-5">
@@ -4679,7 +5012,7 @@ export default function App() {
                 <strong>Soglia Coach (4 Ospiti):</strong> Ogni coach ha diritto a registrare fino a 4 ospiti prioritari per turno. Dal 5° ospite in poi, vengono catalogati automaticamente come &quot;Riserva&quot; (Coda).
               </li>
               <li>
-                <strong>Ribilanciamento Automatico:</strong> Se un turno è pieno (15 persone registrate), ma un coach ha meno di 4 ospiti confermati, i suoi ospiti in coda saltano automaticamente la fila, prendendo la priorità rispetto ai quinti o sesti ospiti di coach che hanno già saturato la loro soglia di 4.
+                <strong>Ribilanciamento Automatico:</strong> Se un turno è pieno (12 persone registrate), ma un coach ha meno di 4 ospiti confermati, i suoi ospiti in coda saltano automaticamente la fila, prendendo la priorità rispetto ai quinti o sesti ospiti di coach che hanno già saturato la loro soglia di 4.
               </li>
               <li>
                 <strong>Esempio Pratico:</strong> Se Lorenzo ha 4 ospiti confermati e 1 in riserva, e Anna ha solo 2 ospiti registrati, il 3° ospite inserito da Anna passerà <strong>automaticamente in cima</strong>, diventando confermato e mandando in riserva il 5° ospite di Lorenzo, perché Anna non ha ancora raggiunto la quota di 4 ospiti.
@@ -4701,7 +5034,7 @@ export default function App() {
                   <SlidersHorizontal className="w-3.5 h-3.5" /> Trattamento Selezionato:
                 </span>
                 <span className="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-1 rounded-xl border border-emerald-100 flex items-center gap-1.5">
-                  <span>🌸</span> Trattamenti Viso (15 postazioni per fascia)
+                  <span>🌸</span> Trattamenti Viso (12 postazioni per fascia)
                 </span>
               </div>
 
@@ -4739,31 +5072,172 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-8">
-                {sortedDates.map(dateStr => {
-                  const daySlots = groupedSlots[dateStr];
-                  const isStandardDay = ['Lunedì', 'Mercoledì', 'Venerdì'].includes(getItalianDayName(dateStr));
-                  
-                  return (
-                    <div key={dateStr} className="space-y-4 animate-fade-in">
-                      
-                      {/* Day Header Banner */}
-                      <div className="flex items-baseline gap-3 border-b border-slate-200 pb-2">
-                        <h3 className="font-display font-extrabold text-xl text-slate-800">
-                          {getItalianDayName(dateStr)}
-                        </h3>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {formatItalianDate(dateStr)}
-                        </span>
-                        {!isStandardDay && (
-                          <span className="bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-amber-200">
-                            Turno flessibile straordinario
-                          </span>
-                        )}
-                      </div>
+              <div className="space-y-6">
+                {/* 5. Clean, Orderly & Collected Day Selection Bar */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-display font-extrabold text-slate-900 text-base flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-emerald-600" />
+                        Scelta del Giorno per i Trattamenti Viso
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Seleziona un giorno per vedere gli orari, le prenotazioni e la disponibilità delle 12 postazioni
+                      </p>
+                    </div>
 
-                      {/* Day's Slots Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      {isAdminMode && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMultiSlotDate(selectedVisoDate || sortedDates[0] || new Date().toISOString().split('T')[0]);
+                            handleApplyPreset('pomeriggio');
+                            setShowMultiSlotModal(true);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" /> Aggiungi Turni Multipli
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setVisoViewMode(prev => prev === 'single' ? 'all' : 'single')}
+                        className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all cursor-pointer ${
+                          visoViewMode === 'all'
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {visoViewMode === 'all' ? 'Mostra Solo Giorno Selezionato' : 'Mostra Tutti i Giorni'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Days list: ordered & collected compact cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                    {sortedDates.map((dateStr) => {
+                      const dayName = getItalianDayName(dateStr);
+                      const isSelected = visoViewMode === 'single' && (selectedVisoDate === dateStr || (!selectedVisoDate && sortedDates[0] === dateStr));
+                      const daySlots = groupedSlots[dateStr] || [];
+                      const totalDayBookings = daySlots.reduce((acc, s) => acc + s.confirmedCount, 0);
+                      const totalDayCapacity = daySlots.length * 12;
+                      const fissiCount = daySlots.filter(s => (s.slotType || 'fisso') === 'fisso').length;
+                      const extraCount = daySlots.filter(s => s.slotType === 'extra').length;
+
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => {
+                            setSelectedVisoDate(dateStr);
+                            setVisoViewMode('single');
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-2.5 cursor-pointer relative overflow-hidden ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/20 scale-[1.02]'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div>
+                            <span className={`text-[10px] font-black uppercase tracking-wider block ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
+                              {dayName}
+                            </span>
+                            <span className="font-display font-extrabold text-base leading-tight block mt-0.5">
+                              {formatItalianDate(dateStr).split(' ')[0]} {formatItalianDate(dateStr).split(' ')[1]}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-semibold">
+                              <span className={`flex items-center gap-1 ${isSelected ? 'text-emerald-50' : 'text-slate-600'}`}>
+                                <Clock className="w-3 h-3" />
+                                {daySlots.length} {daySlots.length === 1 ? 'turno' : 'turni'}
+                              </span>
+                              <span className={`text-[10px] font-mono font-bold ${isSelected ? 'text-emerald-200' : 'text-slate-400'}`}>
+                                {totalDayBookings}/{totalDayCapacity}
+                              </span>
+                            </div>
+
+                            {daySlots.length > 0 && (
+                              <div className="flex items-center gap-1 text-[9px] font-bold">
+                                {fissiCount > 0 && (
+                                  <span className={`px-1 rounded ${isSelected ? 'bg-emerald-700/60 text-emerald-100' : 'bg-slate-200/70 text-slate-600'}`}>
+                                    {fissiCount} fissi
+                                  </span>
+                                )}
+                                {extraCount > 0 && (
+                                  <span className={`px-1 rounded ${isSelected ? 'bg-amber-400/30 text-amber-100' : 'bg-amber-100 text-amber-700'}`}>
+                                    {extraCount} extra
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Day's Slots View */}
+                {(() => {
+                  const activeDayDate = (selectedVisoDate && sortedDates.includes(selectedVisoDate))
+                    ? selectedVisoDate
+                    : sortedDates[0];
+                  const datesToRender = visoViewMode === 'single' && activeDayDate
+                    ? [activeDayDate]
+                    : sortedDates;
+
+                  return datesToRender.map(dateStr => {
+                    const daySlots = groupedSlots[dateStr] || [];
+                    const isStandardDay = ['Lunedì', 'Mercoledì', 'Venerdì'].includes(getItalianDayName(dateStr));
+                    const fissiCount = daySlots.filter(s => (s.slotType || 'fisso') === 'fisso').length;
+                    const extraCount = daySlots.filter(s => s.slotType === 'extra').length;
+
+                    return (
+                      <div key={dateStr} className="space-y-4 animate-fade-in">
+                        
+                        {/* Day Header Banner */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 font-extrabold text-base">
+                              🌸
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-display font-extrabold text-lg text-slate-900">
+                                  {getItalianDayName(dateStr)} {formatItalianDate(dateStr)}
+                                </h3>
+                                {!isStandardDay && (
+                                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                                    Turno straordinario
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500">
+                                {daySlots.length} {daySlots.length === 1 ? 'orario disponibile' : 'orari disponibili'} ({fissiCount} {fissiCount === 1 ? 'turno fisso' : 'turni fissi'}, {extraCount} extra) • Limite di 12 postazioni per turno
+                              </p>
+                            </div>
+                          </div>
+
+                          {isAdminMode && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMultiSlotDate(dateStr);
+                                handleApplyPreset('pomeriggio');
+                                setShowMultiSlotModal(true);
+                              }}
+                              className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Aggiungi turni per {getItalianDayName(dateStr)}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Day's Slots Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {daySlots.map(slot => {
                           // Filter bookings shown by selected coach filter
                           let displayBookings = slot.bookings;
@@ -4771,7 +5245,8 @@ export default function App() {
                             displayBookings = slot.bookings.filter(b => b.coachId === coachFilter);
                           }
 
-                          const isFull = slot.confirmedCount >= 15;
+                          const isFull = slot.confirmedCount >= 12;
+                          const isFisso = (slot.slotType || (slot.isCustom ? 'extra' : 'fisso')) === 'fisso';
                           const treatmentLabel = slot.treatmentType === 'viso' ? 'Trattamento Viso' : 'Valutazione Corporea';
                           const treatmentEmoji = slot.treatmentType === 'viso' ? '🌸' : '⚖️';
                           
@@ -4787,9 +5262,20 @@ export default function App() {
                               {/* Slot Header */}
                               <div>
                                 <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
                                       {treatmentEmoji} {treatmentLabel}
+                                    </span>
+                                    {/* Fisso / Extra Badge */}
+                                    <span 
+                                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                                        isFisso
+                                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}
+                                      title={isFisso ? 'Turno Fisso ordinario' : 'Turno Straordinario Extra'}
+                                    >
+                                      {isFisso ? '📌 Fisso' : '⭐ Extra'}
                                     </span>
                                     {slotRestrictions[slot.slotId] && slotRestrictions[slot.slotId].length > 0 && (
                                       <span 
@@ -4802,26 +5288,36 @@ export default function App() {
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     {isAdminMode && (
-                                      <button
-                                        onClick={() => setShowSlotRestrictionModal(slot)}
-                                        className={`p-1 rounded-md transition-all cursor-pointer ${
-                                          slotRestrictions[slot.slotId] && slotRestrictions[slot.slotId].length > 0
-                                            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                        }`}
-                                        title="Modifica visibilità turno (Solo Admin)"
-                                      >
-                                        <Shield className="w-3 h-3" />
-                                      </button>
-                                    )}
-                                    {slot.isCustom && (
-                                      <button
-                                        onClick={() => handleDeleteCustomSlot(slot.slotId, `${getItalianDayName(slot.date)} alle ${slot.time}`)}
-                                        className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded transition-colors"
-                                        title="Elimina Turno Flessibile"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleSlotType(slot.slotId, slot.slotType || (slot.isCustom ? 'extra' : 'fisso'))}
+                                          className="text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                          title="Cambia tipologia turno tra Fisso ed Extra"
+                                        >
+                                          {isFisso ? 'Rendi Extra' : 'Rendi Fisso'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowSlotRestrictionModal(slot)}
+                                          className={`p-1 rounded-md transition-all cursor-pointer ${
+                                            slotRestrictions[slot.slotId] && slotRestrictions[slot.slotId].length > 0
+                                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                          }`}
+                                          title="Modifica visibilità turno (Solo Admin)"
+                                        >
+                                          <Shield className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteCustomSlot(slot.slotId, `${getItalianDayName(slot.date)} alle ${slot.time}`)}
+                                          className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded transition-colors cursor-pointer"
+                                          title="Elimina o disattiva questo turno"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
                                     )}
                                     <span className="bg-slate-100 text-slate-700 text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1">
                                       <Clock className="w-3 h-3 text-slate-500" />
@@ -4834,10 +5330,10 @@ export default function App() {
                                 <div className="space-y-1.5 mt-3">
                                   <div className="flex justify-between text-xs font-medium">
                                     <span className={`${isFull ? 'text-amber-600 font-bold' : 'text-slate-600'}`}>
-                                      {isFull ? 'Turno al Completo' : 'Posti Disponibili'}
+                                      {isFull ? 'Turno al Completo (12 Postazioni)' : 'Postazioni Disponibili'}
                                     </span>
                                     <span className="font-bold text-slate-800">
-                                      {slot.confirmedCount} / 15 confermati
+                                      {slot.confirmedCount} / 12 confermati
                                       {slot.reserveCount > 0 && ` (+${slot.reserveCount} riserve)`}
                                     </span>
                                   </div>
@@ -4847,13 +5343,13 @@ export default function App() {
                                     {/* Confirmed spots proportion */}
                                     <div 
                                       className={`h-full transition-all duration-500 ${isFull ? 'bg-amber-500' : 'bg-emerald-500'}`} 
-                                      style={{ width: `${Math.min(100, (slot.confirmedCount / 15) * 100)}%` }}
+                                      style={{ width: `${Math.min(100, (slot.confirmedCount / 12) * 100)}%` }}
                                     />
                                     {/* Waitlist proportion */}
                                     {slot.reserveCount > 0 && (
                                       <div 
                                         className="h-full bg-slate-400 transition-all duration-500" 
-                                        style={{ width: `${Math.min(100, (slot.reserveCount / 15) * 100)}%` }}
+                                        style={{ width: `${Math.min(100, (slot.reserveCount / 12) * 100)}%` }}
                                       />
                                     )}
                                   </div>
@@ -4872,9 +5368,9 @@ export default function App() {
                                   </p>
                                 ) : (
                                   <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                                    {/* 1. Confirmed bookings list mapped to their stations (Postazioni 1-15) */}
+                                    {/* 1. Confirmed bookings list mapped to their stations (Postazioni 1-12) */}
                                     <div className="space-y-1">
-                                      {Array.from({ length: 15 }).map((_, i) => {
+                                      {Array.from({ length: 12 }).map((_, i) => {
                                         const postNum = i + 1;
                                         const confirmedList = slot.bookings.filter(b => b.status === 'confermato');
                                         const booking = confirmedList[i];
@@ -5140,7 +5636,8 @@ export default function App() {
 
                     </div>
                   );
-                })}
+                });
+              })()}
               </div>
             )}
           </>
@@ -5586,7 +6083,7 @@ export default function App() {
                 <span>Attivazione Riserva</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Quando il turno raggiunge le 15 postazioni, i successivi ospiti inseriti finiscono in lista d&apos;attesa. Ma se un coach che ha pochi ospiti ne inserisce uno, questo passa automaticamente davanti!
+                Quando il turno raggiunge le 12 postazioni, i successivi ospiti inseriti finiscono in lista d&apos;attesa. Ma se un coach che ha pochi ospiti ne inserisce uno, questo passa automaticamente davanti!
               </p>
             </div>
 
@@ -5718,7 +6215,7 @@ export default function App() {
               <div className="flex justify-between">
                 <span className="font-semibold text-slate-500">Occupazione Attuale:</span>
                 <span className="font-bold text-slate-800">
-                  {activeBookingSlot.confirmedCount} / 15 confermati
+                  {activeBookingSlot.confirmedCount} / 12 confermati
                 </span>
               </div>
               {activeCoach && (
@@ -5838,108 +6335,286 @@ export default function App() {
         </div>
       )}
 
-      {/* 8. Modal: ADD CUSTOM WEEKLY FLEXIBLE SLOT */}
-      {showCustomSlotModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-xl border border-slate-200 p-6 space-y-4 animate-scale-up">
+      {/* 8. Modal: ADD MULTIPLE SLOTS PER DAY (ADMIN) */}
+      {(showCustomSlotModal || showMultiSlotModal) && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 p-6 sm:p-7 space-y-5 animate-scale-up my-8 max-h-[92vh] flex flex-col">
             
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-display font-bold text-lg text-slate-900">Aggiungi Turno Straordinario</h3>
-                <p className="text-xs text-slate-500">Crea una fascia oraria flessibile per la settimana</p>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-lg text-slate-900">
+                    Aggiungi Turni del Giorno (Multipli)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Inserisci più orari in un&apos;unica azione e specifica quali sono turni fissi e quali extra
+                  </p>
+                </div>
               </div>
               <button 
-                onClick={() => setShowCustomSlotModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1"
+                onClick={() => {
+                  setShowCustomSlotModal(false);
+                  setShowMultiSlotModal(false);
+                }}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleAddCustomSlot} className="space-y-4">
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleAddMultiSlots} className="space-y-5 overflow-y-auto pr-1 flex-1">
               
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Tipo Trattamento</label>
-                <div className="grid grid-cols-2 gap-2">
+              {/* Date & Treatment selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Data della Giornata *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={multiSlotDate || customSlotDate}
+                    onChange={(e) => {
+                      setMultiSlotDate(e.target.value);
+                      setCustomSlotDate(e.target.value);
+                    }}
+                    className="w-full text-sm font-semibold border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none bg-slate-50/50"
+                  />
+                  {(multiSlotDate || customSlotDate) && (
+                    <span className="text-[11px] font-bold text-emerald-700 mt-1 block">
+                      📅 {getItalianDayName(multiSlotDate || customSlotDate)} {formatItalianDate(multiSlotDate || customSlotDate)}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Tipo Trattamento
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMultiSlotTreatment('viso')}
+                      className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                        multiSlotTreatment === 'viso'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/10'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>🌸</span> Viso (12 postazioni)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMultiSlotTreatment('corpo')}
+                      className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                        multiSlotTreatment === 'corpo'
+                          ? 'bg-purple-50 border-purple-500 text-purple-800 ring-2 ring-purple-500/10'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>⚖️</span> Corpo
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    ⚡ Selezioni Rapide
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetAllSelectedType('fisso')}
+                      disabled={selectedMultiTimes.length === 0}
+                      className="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                    >
+                      Tutti Fissi 📌
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetAllSelectedType('extra')}
+                      disabled={selectedMultiTimes.length === 0}
+                      className="text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                    >
+                      Tutti Extra ⭐
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setCustomSlotType('viso')}
-                    className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-center flex items-center justify-center gap-1.5 ${
-                      customSlotType === 'viso' 
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/10' 
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
+                    onClick={() => handleApplyPreset('pomeriggio')}
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                   >
-                    <span>🌸</span> Trattamento Viso
+                    🌇 Pomeriggio Standard (15:00, 17:00, 19:00 Fissi)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCustomSlotType('corpo')}
-                    className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-center flex items-center justify-center gap-1.5 ${
-                      customSlotType === 'corpo' 
-                        ? 'bg-purple-50 border-purple-500 text-purple-800 ring-2 ring-purple-500/10' 
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
+                    onClick={() => handleApplyPreset('mattina')}
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                   >
-                    <span>⚖️</span> Valutazione Corporea
+                    🌅 Mattina Extra (09:00, 10:30, 12:00)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('giornata')}
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                  >
+                    🌟 Intera Giornata (Mattina + Pomeriggio)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('none')}
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition-colors cursor-pointer"
+                  >
+                    ✕ Svuota selezione
                   </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Data del Turno</label>
+              {/* Times checklist */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                    Scegli gli orari e la tipologia (Fisso o Extra)
+                  </label>
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
+                    {selectedMultiTimes.length} orari selezionati
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto p-1.5 border border-slate-100 rounded-2xl bg-slate-50/40">
+                  {standardDayHourList.map((timeStr) => {
+                    const selectedEntry = selectedMultiTimes.find(t => t.time === timeStr);
+                    const isChecked = !!selectedEntry;
+                    const slotType = selectedEntry?.slotType || 'fisso';
+
+                    return (
+                      <div
+                        key={timeStr}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                          isChecked
+                            ? 'bg-white border-emerald-400 shadow-2xs ring-1 ring-emerald-500/20'
+                            : 'bg-white/60 border-slate-200/80 hover:bg-white'
+                        }`}
+                      >
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleMultiTime(timeStr, 'fisso')}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                          />
+                          <span className={`font-mono font-bold text-xs ${isChecked ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {timeStr}
+                          </span>
+                        </label>
+
+                        {isChecked && (
+                          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => handleChangeMultiSlotType(timeStr, 'fisso')}
+                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer transition-colors ${
+                                slotType === 'fisso'
+                                  ? 'bg-blue-600 text-white shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="Turno Fisso ordinario"
+                            >
+                              📌 Fisso
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleChangeMultiSlotType(timeStr, 'extra')}
+                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer transition-colors ${
+                                slotType === 'extra'
+                                  ? 'bg-amber-500 text-white shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="Turno Straordinario Extra"
+                            >
+                              ⭐ Extra
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Add Custom Hour */}
+              <div className="flex items-center gap-2 pt-1">
                 <input
-                  type="date"
-                  required
-                  value={customSlotDate}
-                  onChange={(e) => setCustomSlotDate(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none"
+                  type="text"
+                  placeholder="Altro orario (es. 16:15)"
+                  value={customMultiTimeInput}
+                  onChange={(e) => setCustomMultiTimeInput(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-xl px-3 py-2 w-44 focus:ring-2 focus:ring-emerald-500/25 outline-none bg-white"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Suggerimento: I turni standard Lun, Mer e Ven (15:00, 17:00, 19:00) sono già attivi per impostazione predefinita.
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Orario d&apos;inizio</label>
-                <select
-                  value={customSlotTime}
-                  onChange={(e) => setCustomSlotTime(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none"
-                >
-                  <option value="09:00">09:00</option>
-                  <option value="10:00">10:00</option>
-                  <option value="11:00">11:00</option>
-                  <option value="12:00">12:00</option>
-                  <option value="13:00">13:00</option>
-                  <option value="14:00">14:00</option>
-                  <option value="15:00">15:00</option>
-                  <option value="16:00">16:00</option>
-                  <option value="17:00">17:00</option>
-                  <option value="18:00">18:00</option>
-                  <option value="19:00">19:00</option>
-                  <option value="20:00">20:00</option>
-                </select>
-              </div>
-
-              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCustomSlotModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-colors"
+                  onClick={handleAddCustomTimeInput}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors cursor-pointer"
+                >
+                  + Aggiungi orario
+                </button>
+              </div>
+
+              {/* Summary Banner */}
+              <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 text-xs text-emerald-900 space-y-1">
+                <div className="font-bold flex items-center justify-between">
+                  <span>Riepilogo Azione:</span>
+                  <span className="bg-emerald-200/60 px-2 py-0.5 rounded-full font-mono font-bold">
+                    {selectedMultiTimes.length} turni
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Creerai o aggiornerai {selectedMultiTimes.length} turni per {(multiSlotDate || customSlotDate) ? formatItalianDate(multiSlotDate || customSlotDate) : 'la data selezionata'}:{' '}
+                  <strong>{selectedMultiTimes.filter(t => t.slotType === 'fisso').length} Fissi</strong> e{' '}
+                  <strong>{selectedMultiTimes.filter(t => t.slotType === 'extra').length} Extra</strong>.
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCustomSlotModal(false);
+                    setShowMultiSlotModal(false);
+                  }}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-3 rounded-2xl transition-colors cursor-pointer"
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading || !customSlotDate}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5"
+                  disabled={actionLoading || !(multiSlotDate || customSlotDate) || selectedMultiTimes.length === 0}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold py-3 rounded-2xl transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Aggiungi Turno
+                  {actionLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Salva tutti i turni ({selectedMultiTimes.length})
+                    </>
+                  )}
                 </button>
               </div>
-            </form>
 
+            </form>
           </div>
         </div>
       )}
@@ -7450,8 +8125,22 @@ export default function App() {
         const activeCoach = coaches.find(c => c.id === currentCoachId);
         if (!activeCoach) return null;
 
-        // Filter contacts by search query
+        // Filter contacts by search query & reminder filter
         const filteredContacts = contacts.filter(c => {
+          // Tab filter
+          if (contactsTabFilter === 'urgent') {
+            if (!c.hasReminder || !c.reminderDate || c.reminderCompleted) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const target = new Date(c.reminderDate + 'T00:00:00');
+            const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) return false; // not today or overdue
+          } else if (contactsTabFilter === 'reminders') {
+            if (!c.hasReminder || !c.reminderDate || c.reminderCompleted) return false;
+          } else if (contactsTabFilter === 'completed') {
+            if (!c.hasReminder || !c.reminderCompleted) return false;
+          }
+
           if (!searchContactQuery.trim()) return true;
           const query = searchContactQuery.toLowerCase();
           return (
@@ -7459,6 +8148,7 @@ export default function App() {
             (c.phone && String(c.phone).toLowerCase().includes(query)) ||
             c.productsPurchased.toLowerCase().includes(query) ||
             c.notes.toLowerCase().includes(query) ||
+            (c.reminderNote && c.reminderNote.toLowerCase().includes(query)) ||
             ((query.includes('smartbox') || query.includes('tagliando')) && c.smartboxTagliando)
           );
         });
@@ -7626,6 +8316,156 @@ export default function App() {
                         />
                       </div>
 
+                      {/* Personal Reminder / Follow-Up Section */}
+                      <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-amber-50/30 p-3.5 rounded-2xl border border-amber-200 shadow-3xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-2 cursor-pointer select-none">
+                            <span className="text-base">🔔</span>
+                            <span>Imposta Promemoria / Reminder</span>
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={newContactHasReminder}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setNewContactHasReminder(checked);
+                              if (checked && !newContactReminderDate) {
+                                const d = new Date();
+                                d.setDate(d.getDate() + (newContactReminderDays || 7));
+                                setNewContactReminderDate(d.toISOString().split('T')[0]);
+                              }
+                            }}
+                            className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500 border-amber-300 cursor-pointer"
+                          />
+                        </div>
+
+                        {newContactHasReminder && (
+                          <div className="space-y-3 pt-1 border-t border-amber-200/60 animate-fade-in text-left">
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider">
+                                  Ricevi promemoria tra quanti giorni?
+                                </label>
+                                <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                                  {newContactReminderDays} {newContactReminderDays === 1 ? 'giorno' : 'giorni'}
+                                </span>
+                              </div>
+
+                              {/* Preset quick buttons */}
+                              <div className="grid grid-cols-5 gap-1.5 mb-2">
+                                {[3, 7, 14, 21, 30].map((days) => {
+                                  const isSelected = newContactReminderDays === days;
+                                  return (
+                                    <button
+                                      key={days}
+                                      type="button"
+                                      onClick={() => {
+                                        setNewContactReminderDays(days);
+                                        const d = new Date();
+                                        d.setDate(d.getDate() + days);
+                                        setNewContactReminderDate(d.toISOString().split('T')[0]);
+                                      }}
+                                      className={`py-1.5 px-0.5 rounded-xl text-[10px] font-black transition-all cursor-pointer border text-center ${
+                                        isSelected
+                                          ? 'bg-amber-500 text-white border-amber-600 shadow-2xs scale-102'
+                                          : 'bg-white text-slate-700 hover:bg-amber-100/60 border-amber-200'
+                                      }`}
+                                    >
+                                      {days} gg
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Custom Days & Date Preview */}
+                              <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-amber-200">
+                                <div>
+                                  <span className="block text-[9px] font-bold uppercase text-slate-400">Personalizza giorni</span>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="365"
+                                      value={newContactReminderDays || ''}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value, 10);
+                                        const days = isNaN(val) ? 0 : val;
+                                        setNewContactReminderDays(days);
+                                        if (days > 0) {
+                                          const d = new Date();
+                                          d.setDate(d.getDate() + days);
+                                          setNewContactReminderDate(d.toISOString().split('T')[0]);
+                                        }
+                                      }}
+                                      placeholder="es. 10"
+                                      className="w-full text-xs font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-500">gg</span>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <span className="block text-[9px] font-bold uppercase text-slate-400">Data promemoria</span>
+                                  <input
+                                    type="date"
+                                    value={newContactReminderDate}
+                                    onChange={(e) => {
+                                      const dateStr = e.target.value;
+                                      setNewContactReminderDate(dateStr);
+                                      if (dateStr) {
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        const chosen = new Date(dateStr + 'T00:00:00');
+                                        const diff = Math.round((chosen.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                        if (diff >= 0) setNewContactReminderDays(diff);
+                                      }
+                                    }}
+                                    className="w-full text-[11px] font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Calculated summary notice */}
+                              {newContactReminderDate && (
+                                <div className="mt-2 text-[10px] font-semibold text-amber-900 bg-amber-100/70 p-2 rounded-xl flex items-center gap-1.5 border border-amber-200">
+                                  <span>📅</span>
+                                  <span>
+                                    Riceverai il promemoria il: <strong>{new Date(newContactReminderDate + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong> ({newContactReminderDays} gg da oggi)
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Reminder note */}
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider mb-1">
+                                Motivo / Oggetto Promemoria
+                              </label>
+                              <input
+                                type="text"
+                                value={newContactReminderNote}
+                                onChange={(e) => setNewContactReminderNote(e.target.value)}
+                                placeholder="es. Follow-up prodotti e proposta percorso"
+                                className="w-full text-xs font-semibold p-2 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-slate-800"
+                              />
+                              {/* Quick tags */}
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {['Feedback Prodotti', 'Check Risultati', 'Invito Valutazione', 'Invito Trattamento Viso', 'Follow-up Telefonico'].map(suggestion => (
+                                  <button
+                                    key={suggestion}
+                                    type="button"
+                                    onClick={() => setNewContactReminderNote(suggestion)}
+                                    className="text-[9px] font-semibold bg-white hover:bg-amber-100 text-slate-700 px-2 py-0.5 rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                                  >
+                                    + {suggestion}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Buttons */}
                       <div className="flex gap-2 pt-1">
                         <button
@@ -7649,24 +8489,107 @@ export default function App() {
                   </div>
 
                   {/* Right Column: Contacts Table List */}
-                  <div className="lg:col-span-8 flex flex-col h-full space-y-4">
+                  <div className="lg:col-span-8 flex flex-col h-full space-y-3">
                     
-                    {/* Search & Statistics Bar */}
-                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-150">
-                      <div className="relative w-full sm:max-w-xs text-left">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
-                        <input
-                          type="text"
-                          value={searchContactQuery}
-                          onChange={(e) => setSearchContactQuery(e.target.value)}
-                          placeholder="Cerca contatto o prodotti..."
-                          className="w-full pl-9 pr-4 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
-                        />
+                    {/* Urgent Reminders Notice Banner */}
+                    {urgentReminders.length > 0 && (
+                      <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-center justify-between gap-3 text-left animate-fade-in shadow-3xs">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xl">🚨</span>
+                          <div>
+                            <h4 className="text-xs font-black text-rose-900">
+                              Hai {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria in scadenza o scaduto' : 'promemoria in scadenza o scaduti'} da gestire oggi!
+                            </h4>
+                            <p className="text-[10px] text-rose-700 font-medium">
+                              Ognuno vede solo i suoi contatti: ricontatta il cliente via WhatsApp o telefono.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('urgent')}
+                          className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-3xs"
+                        >
+                          Filtra Urgenze ({urgentReminders.length})
+                        </button>
                       </div>
-                      <div className="flex gap-4 text-xs font-bold text-slate-500">
-                        <span>Contatti totali: <strong className="text-slate-800">{contacts.length}</strong></span>
-                        <span>•</span>
-                        <span>Trovati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
+                    )}
+
+                    {/* Filter Tabs & Search Bar */}
+                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-150 space-y-2.5">
+                      {/* Tabs Bar */}
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('all')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            contactsTabFilter === 'all'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                          }`}
+                        >
+                          Tutti i contatti ({contacts.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('urgent')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                            contactsTabFilter === 'urgent'
+                              ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                              : urgentReminders.length > 0
+                              ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                          }`}
+                        >
+                          <span>⚠️ Da Gestire Oggi / Scaduti</span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'urgent' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'}`}>
+                            {urgentReminders.length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('reminders')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                            contactsTabFilter === 'reminders'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                          }`}
+                        >
+                          <span>🔔 Tutti i Promemoria</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'reminders' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {coachRemindersList.filter(r => !r.isCompleted).length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('completed')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            contactsTabFilter === 'completed'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                          }`}
+                        >
+                          ✅ Completati ({completedReminders.length})
+                        </button>
+                      </div>
+
+                      {/* Search & Statistics Bar */}
+                      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-1">
+                        <div className="relative w-full sm:max-w-xs text-left">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                          <input
+                            type="text"
+                            value={searchContactQuery}
+                            onChange={(e) => setSearchContactQuery(e.target.value)}
+                            placeholder="Cerca per nome, telefono, note o reminder..."
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
+                          />
+                        </div>
+                        <div className="flex gap-4 text-xs font-bold text-slate-500">
+                          <span>Contatti totali: <strong className="text-slate-800">{contacts.length}</strong></span>
+                          <span>•</span>
+                          <span>Visualizzati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
+                        </div>
                       </div>
                     </div>
 
@@ -7686,6 +8609,7 @@ export default function App() {
                                 <th className="p-3.5 pl-4">Nome Contatto</th>
                                 <th className="p-3.5">Cellulare</th>
                                 <th className="p-3.5">Data Skin</th>
+                                <th className="p-3.5 text-center">🔔 Promemoria</th>
                                 <th className="p-3.5 text-center w-20">Valutazione</th>
                                 <th className="p-3.5 text-center w-20">Info Attività</th>
                                 <th className="p-3.5 text-center w-16">Sport</th>
@@ -7717,6 +8641,97 @@ export default function App() {
                                   </td>
                                   <td className="p-3.5 text-slate-600 font-mono font-medium">
                                     {contact.skinDate ? new Date(contact.skinDate).toLocaleDateString('it-IT') : '-'}
+                                  </td>
+
+                                  {/* Reminder status cell */}
+                                  <td className="p-3.5 text-center whitespace-nowrap">
+                                    {contact.hasReminder && contact.reminderDate ? (() => {
+                                      const today = new Date();
+                                      today.setHours(0, 0, 0, 0);
+                                      const target = new Date(contact.reminderDate + 'T00:00:00');
+                                      const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                      const isDone = !!contact.reminderCompleted;
+                                      const isToday = !isDone && diffDays === 0;
+                                      const isOverdue = !isDone && diffDays < 0;
+
+                                      if (isDone) {
+                                        return (
+                                          <span 
+                                            className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                            title={contact.reminderNote || 'Promemoria completato'}
+                                          >
+                                            ✓ Fatto
+                                          </span>
+                                        );
+                                      }
+
+                                      if (isToday) {
+                                        return (
+                                          <div className="inline-flex items-center gap-1">
+                                            <span 
+                                              className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-3xs"
+                                              title={`OGGI: ${contact.reminderNote || 'Follow-up'}`}
+                                            >
+                                              🔔 Oggi!
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handlePatchReminder(contact.id, { completed: true })}
+                                              className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
+                                              title="Segna come completato"
+                                            >
+                                              ✓
+                                            </button>
+                                          </div>
+                                        );
+                                      }
+
+                                      if (isOverdue) {
+                                        return (
+                                          <div className="inline-flex items-center gap-1">
+                                            <span 
+                                              className="inline-flex items-center gap-1 bg-rose-100 text-rose-900 border border-rose-300 text-[10px] font-black px-2 py-0.5 rounded-full shadow-3xs"
+                                              title={`Scaduto da ${Math.abs(diffDays)} giorni: ${contact.reminderNote || ''}`}
+                                            >
+                                              ⚠️ {Math.abs(diffDays)} gg fa
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handlePatchReminder(contact.id, { completed: true })}
+                                              className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
+                                              title="Segna come completato"
+                                            >
+                                              ✓
+                                            </button>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <span 
+                                          className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                          title={`Previsto per il ${new Date(contact.reminderDate).toLocaleDateString('it-IT')}: ${contact.reminderNote || ''}`}
+                                        >
+                                          ⏰ Tra {diffDays} gg
+                                        </span>
+                                      );
+                                    })() : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setQuickReminderContact(contact);
+                                          setQuickReminderDays(7);
+                                          const d = new Date();
+                                          d.setDate(d.getDate() + 7);
+                                          setQuickReminderDate(d.toISOString().split('T')[0]);
+                                          setQuickReminderNote('Follow-up contatto');
+                                        }}
+                                        className="text-[10px] font-bold text-slate-400 hover:text-amber-700 hover:bg-amber-50 px-2 py-0.5 rounded-lg border border-dashed border-slate-300 hover:border-amber-300 transition-all cursor-pointer"
+                                        title="Imposta promemoria dopo determinati giorni"
+                                      >
+                                        + Promemoria
+                                      </button>
+                                    )}
                                   </td>
                                   
                                   {/* Checkboxes Displays: only show checkmarks */}
@@ -7927,6 +8942,135 @@ export default function App() {
                     {contact.notes || <span className="italic text-slate-400 font-semibold">Nessuna nota aggiuntiva.</span>}
                   </p>
                 </div>
+
+                {/* Personal Reminder / Follow-Up Detail Section */}
+                <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/30 to-amber-50/20 p-4 rounded-2xl border border-amber-200 text-left space-y-3 shadow-3xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
+                      <span>🔔</span> Promemoria Personale & Follow-Up
+                    </span>
+                    {contact.hasReminder && contact.reminderDate && (() => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const target = new Date(contact.reminderDate + 'T00:00:00');
+                      const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      const isDone = !!contact.reminderCompleted;
+                      const isToday = !isDone && diffDays === 0;
+                      const isOverdue = !isDone && diffDays < 0;
+
+                      if (isDone) {
+                        return <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">✓ Completato</span>;
+                      }
+                      if (isToday) {
+                        return <span className="text-[10px] font-black bg-amber-400 text-amber-950 px-2.5 py-0.5 rounded-full animate-pulse shadow-3xs">🚨 Da gestire OGGI!</span>;
+                      }
+                      if (isOverdue) {
+                        return <span className="text-[10px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full border border-rose-200">⚠️ Scaduto da {Math.abs(diffDays)} gg</span>;
+                      }
+                      return <span className="text-[10px] font-bold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-200">⏰ Tra {diffDays} gg</span>;
+                    })()}
+                  </div>
+
+                  {contact.hasReminder && contact.reminderDate ? (
+                    <div className="space-y-3">
+                      <div className="bg-white p-3 rounded-xl border border-amber-200/80 space-y-1.5">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500 font-semibold">Data programmata:</span>
+                          <strong className="text-slate-800 font-mono">
+                            {new Date(contact.reminderDate + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                          </strong>
+                        </div>
+                        {contact.reminderDays && (
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500 font-semibold">Intervallo impostato:</span>
+                            <span className="text-slate-700 font-bold">{contact.reminderDays} giorni</span>
+                          </div>
+                        )}
+                        <div className="text-xs pt-1 border-t border-slate-100">
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Motivo / Note:</span>
+                          <p className="text-slate-800 font-medium italic mt-0.5">
+                            &quot;{contact.reminderNote || 'Follow-up contatto'}&quot;
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Reminder Action Buttons */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handlePatchReminder(contact.id, { completed: !contact.reminderCompleted })}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-3xs flex items-center gap-1.5 ${
+                            contact.reminderCompleted
+                              ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          {contact.reminderCompleted ? '↺ Riapri Promemoria' : '✓ Segna come Completato'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePatchReminder(contact.id, { snoozeDays: 3 })}
+                          className="bg-white hover:bg-amber-100/60 text-slate-700 border border-amber-300 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                          title="Posticipa la data del promemoria di 3 giorni"
+                        >
+                          ⏰ +3 giorni
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePatchReminder(contact.id, { snoozeDays: 7 })}
+                          className="bg-white hover:bg-amber-100/60 text-slate-700 border border-amber-300 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                          title="Posticipa la data del promemoria di 7 giorni"
+                        >
+                          ⏰ +7 giorni
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickReminderContact(contact);
+                            setQuickReminderDays(contact.reminderDays || 7);
+                            setQuickReminderDate(contact.reminderDate || '');
+                            setQuickReminderNote(contact.reminderNote || '');
+                          }}
+                          className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                        >
+                          ✏️ Modifica
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePatchReminder(contact.id, { removeReminder: true })}
+                          className="text-slate-400 hover:text-red-600 text-xs font-bold px-2 py-1.5 transition-colors cursor-pointer"
+                        >
+                          Rimuovi
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-250">
+                      <div>
+                        <p className="text-xs font-bold text-slate-700">Nessun promemoria attivo per questo contatto</p>
+                        <p className="text-[10px] text-slate-500">Imposta un promemoria per ricevere un avviso dopo i giorni che preferisci.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickReminderContact(contact);
+                          setQuickReminderDays(7);
+                          const d = new Date();
+                          d.setDate(d.getDate() + 7);
+                          setQuickReminderDate(d.toISOString().split('T')[0]);
+                          setQuickReminderNote('Follow-up contatto');
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-3xs"
+                      >
+                        + Imposta Promemoria
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Footer */}
@@ -7954,6 +9098,456 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Modal: QUICK REMINDER SETTER / EDITOR */}
+      {quickReminderContact && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-scale-up text-left text-slate-800">
+            <div className="bg-amber-500 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🔔</span>
+                <div>
+                  <h3 className="font-display font-extrabold text-sm tracking-wide uppercase">
+                    {quickReminderContact.hasReminder ? 'Modifica Promemoria' : 'Imposta Promemoria'}
+                  </h3>
+                  <p className="text-[10px] text-amber-100 font-semibold">
+                    Contatto: {quickReminderContact.contactName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickReminderContact(null)}
+                className="text-amber-100 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Preset Days */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
+                  Dopo quanti giorni vuoi ricevere il promemoria?
+                </label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[3, 7, 14, 21, 30].map(days => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        setQuickReminderDays(days);
+                        const d = new Date();
+                        d.setDate(d.getDate() + days);
+                        setQuickReminderDate(d.toISOString().split('T')[0]);
+                      }}
+                      className={`py-2 px-1 rounded-xl text-[10px] font-black border text-center transition-all cursor-pointer ${
+                        quickReminderDays === days
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-2xs scale-102'
+                          : 'bg-white text-slate-700 hover:bg-amber-50 border-amber-200'
+                      }`}
+                    >
+                      {days} gg
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Days & Target Date */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <span className="block text-[9px] font-bold uppercase text-slate-400">Giorni personalizzati</span>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={quickReminderDays || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        const days = isNaN(val) ? 0 : val;
+                        setQuickReminderDays(days);
+                        if (days > 0) {
+                          const d = new Date();
+                          d.setDate(d.getDate() + days);
+                          setQuickReminderDate(d.toISOString().split('T')[0]);
+                        }
+                      }}
+                      className="w-full text-xs font-bold p-1 bg-white border border-slate-200 rounded-lg outline-none text-slate-800 font-mono"
+                    />
+                    <span className="text-[10px] font-bold text-slate-500">gg</span>
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-[9px] font-bold uppercase text-slate-400">Data promemoria</span>
+                  <input
+                    type="date"
+                    value={quickReminderDate}
+                    onChange={(e) => {
+                      const dateStr = e.target.value;
+                      setQuickReminderDate(dateStr);
+                      if (dateStr) {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const chosen = new Date(dateStr + 'T00:00:00');
+                        const diff = Math.round((chosen.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        if (diff >= 0) setQuickReminderDays(diff);
+                      }
+                    }}
+                    className="w-full text-[11px] font-bold p-1 bg-white border border-slate-200 rounded-lg outline-none text-slate-800 font-mono"
+                  />
+                </div>
+              </div>
+
+              {quickReminderDate && (
+                <div className="text-[10px] font-semibold text-amber-900 bg-amber-50 p-2.5 rounded-xl border border-amber-200 flex items-center gap-1.5">
+                  <span>📅</span>
+                  <span>
+                    Data prevista: <strong>{new Date(quickReminderDate + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+                  </span>
+                </div>
+              )}
+
+              {/* Reason / Note */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
+                  Motivo / Note del promemoria
+                </label>
+                <input
+                  type="text"
+                  value={quickReminderNote}
+                  onChange={(e) => setQuickReminderNote(e.target.value)}
+                  placeholder="es. Verifica benessere, risultati e follow-up"
+                  className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-slate-800"
+                />
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {['Feedback Prodotti', 'Check Risultati', 'Invito Valutazione', 'Invito Skin', 'Chiamata Follow-up'].map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setQuickReminderNote(s)}
+                      className="text-[9px] font-semibold bg-slate-100 hover:bg-amber-100 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 border-t border-slate-150 flex items-center justify-between">
+              {quickReminderContact.hasReminder ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handlePatchReminder(quickReminderContact.id, { removeReminder: true });
+                    setQuickReminderContact(null);
+                  }}
+                  className="text-xs font-bold text-red-600 hover:text-red-700 cursor-pointer"
+                >
+                  Rimuovi Promemoria
+                </button>
+              ) : <div />}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickReminderContact(null)}
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handlePatchReminder(quickReminderContact.id, {
+                      hasReminder: true,
+                      reminderDays: quickReminderDays,
+                      reminderDate: quickReminderDate,
+                      reminderNote: quickReminderNote,
+                      completed: false
+                    });
+                    setQuickReminderContact(null);
+                  }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-3xs"
+                >
+                  Salva Promemoria
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drawer / Modal: PERSONAL REMINDERS CENTER */}
+      {isRemindersDrawerOpen && (() => {
+        const activeCoach = coaches.find(c => c.id === currentCoachId);
+        return (
+          <div className="fixed inset-0 z-[100] overflow-hidden">
+            {/* Overlay backdrop */}
+            <div 
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-fade-in"
+              onClick={() => setIsRemindersDrawerOpen(false)}
+            />
+
+            <div className="absolute inset-y-0 right-0 max-w-full flex">
+              <div className="w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col h-full animate-slide-in text-left text-slate-800">
+                {/* Header */}
+                <div className="px-6 py-5 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-lg">
+                      🔔
+                    </div>
+                    <div>
+                      <h3 className="font-display font-extrabold text-sm tracking-tight uppercase">
+                        I Tuoi Promemoria Personali
+                      </h3>
+                      <p className="text-[10px] text-amber-100 font-medium">
+                        Operatore: <strong>{activeCoach?.name || 'Coach'}</strong> • Privato (visibile solo a te)
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsRemindersDrawerOpen(false)}
+                    className="rounded-lg p-1 text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Stat Counters & Info Bar */}
+                <div className="grid grid-cols-3 divide-x divide-slate-150 bg-slate-50 border-b border-slate-200 p-3 text-center">
+                  <div className="px-2">
+                    <span className="block text-base font-black text-rose-600 font-mono">{urgentReminders.length}</span>
+                    <span className="text-[9px] font-bold uppercase text-slate-500">Oggi / Scaduti</span>
+                  </div>
+                  <div className="px-2">
+                    <span className="block text-base font-black text-amber-600 font-mono">{upcomingReminders.length}</span>
+                    <span className="text-[9px] font-bold uppercase text-slate-500">In Arrivo</span>
+                  </div>
+                  <div className="px-2">
+                    <span className="block text-base font-black text-emerald-600 font-mono">{completedReminders.length}</span>
+                    <span className="text-[9px] font-bold uppercase text-slate-500">Completati</span>
+                  </div>
+                </div>
+
+                {/* Reminders List */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {coachRemindersList.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-400">
+                      <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-2xl text-amber-500">
+                        🔔
+                      </div>
+                      <div>
+                        <p className="font-extrabold text-slate-800 text-xs">Nessun promemoria attivo</p>
+                        <p className="text-[11px] text-slate-400 max-w-[240px] mt-1 leading-normal">
+                          Quando aggiungi contatti nel tuo Database Personale, puoi impostare un promemoria per ricevere notifiche direttamente sul sito!
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRemindersDrawerOpen(false);
+                          setIsContactsDbOpen(true);
+                        }}
+                        className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all cursor-pointer shadow-3xs"
+                      >
+                        Apri Database Personale
+                      </button>
+                    </div>
+                  ) : (
+                    coachRemindersList.map((item) => {
+                      const c = item.contact;
+                      const cleanedPhone = c.phone ? String(c.phone).replace(/\D/g, '') : '';
+                      const waPhone = (cleanedPhone.length === 10 && cleanedPhone.startsWith('3')) ? '39' + cleanedPhone : cleanedPhone;
+
+                      return (
+                        <div
+                          key={c.id}
+                          className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                            item.isCompleted
+                              ? 'bg-slate-50 border-slate-200 opacity-70'
+                              : item.isToday
+                              ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-200/60 shadow-3xs'
+                              : item.isOverdue
+                              ? 'bg-rose-50/70 border-rose-300 shadow-3xs'
+                              : 'bg-white border-slate-200 hover:border-slate-300 shadow-3xs'
+                          }`}
+                        >
+                          {/* Top Row: Name, Status badge & WhatsApp */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-black text-slate-900">
+                                  {c.contactName}
+                                </h4>
+                                {item.isCompleted ? (
+                                  <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
+                                    ✓ Completato
+                                  </span>
+                                ) : item.isToday ? (
+                                  <span className="text-[9px] font-black bg-amber-400 text-amber-950 px-2 py-0.2 rounded-full animate-pulse">
+                                    🚨 Oggi!
+                                  </span>
+                                ) : item.isOverdue ? (
+                                  <span className="text-[9px] font-black bg-rose-100 text-rose-800 px-2 py-0.2 rounded-full">
+                                    ⚠️ {Math.abs(item.diffDays)} gg fa
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold bg-sky-100 text-sky-800 px-2 py-0.2 rounded-full">
+                                    ⏰ Tra {item.diffDays} gg
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                Previsto per: {new Date(c.reminderDate! + 'T00:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+
+                            {c.phone && (
+                              <a
+                                href={`https://wa.me/${waPhone}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors shrink-0"
+                                title="Apri WhatsApp"
+                              >
+                                <svg className="w-4 h-4 fill-emerald-600" viewBox="0 0 24 24">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.062 5.248 5.311 0 11.786 0c3.137.001 6.086 1.222 8.303 3.442 2.218 2.22 3.437 5.17 3.437 8.307-.005 6.486-5.253 11.732-11.73 11.732-2.008-.002-3.98-.517-5.732-1.496L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.316 0 9.64-4.32 9.643-9.637.002-2.578-1.002-5.001-2.825-6.825C16.467 2.328 14.048 1.326 11.47 1.326 6.155 1.326 1.83 5.645 1.828 10.963c0 1.701.447 3.361 1.295 4.837l-.953 3.477 3.564-.934zm11.332-6.52c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                </svg>
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Reason note */}
+                          <div className="text-[11px] text-slate-600 bg-white/70 p-2 rounded-xl border border-slate-150 italic">
+                            &quot;{c.reminderNote || 'Follow-up contatto'}&quot;
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-150/60">
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handlePatchReminder(c.id, { completed: !item.isCompleted })}
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                                  item.isCompleted
+                                    ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-3xs'
+                                }`}
+                              >
+                                {item.isCompleted ? '↺ Riapri' : '✓ Fatto'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePatchReminder(c.id, { snoozeDays: 3 })}
+                                className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-amber-50 text-slate-700 border border-slate-250 rounded-lg transition-all cursor-pointer"
+                                title="Posticipa di 3 giorni"
+                              >
+                                +3gg
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePatchReminder(c.id, { snoozeDays: 7 })}
+                                className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-amber-50 text-slate-700 border border-slate-250 rounded-lg transition-all cursor-pointer"
+                                title="Posticipa di 7 giorni"
+                              >
+                                +7gg
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedContactForDetail(c);
+                                setIsRemindersDrawerOpen(false);
+                              }}
+                              className="text-[10px] font-bold text-amber-700 hover:text-amber-800 underline cursor-pointer"
+                            >
+                              Vedi Scheda
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRemindersDrawerOpen(false);
+                      setIsContactsDbOpen(true);
+                    }}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-xl transition-all shadow-3xs cursor-pointer text-center"
+                  >
+                    Gestisci nel Database Completo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsRemindersDrawerOpen(false)}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Floating reminder alert badge on website */}
+      {isLoggedIn && currentCoachId && urgentReminders.length > 0 && !hasDismissedTodayReminderAlert && (
+        <div className="fixed bottom-5 right-5 z-[80] max-w-sm bg-white rounded-2xl shadow-2xl border border-rose-300 p-4 animate-slide-in text-left flex items-start gap-3 shadow-rose-900/10">
+          <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-lg shrink-0">
+            🔔
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-slate-900">
+                Hai {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria per oggi' : 'promemoria per oggi'}!
+              </h4>
+              <button
+                type="button"
+                onClick={() => setHasDismissedTodayReminderAlert(true)}
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">
+              {urgentReminders[0].contact.contactName}: {urgentReminders[0].contact.reminderNote || 'Follow-up programmato'}
+            </p>
+            <div className="flex gap-2 mt-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRemindersDrawerOpen(true);
+                  setHasDismissedTodayReminderAlert(true);
+                }}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-3xs"
+              >
+                Visualizza Promemoria
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsContactsDbOpen(true);
+                  setContactsTabFilter('urgent');
+                  setHasDismissedTodayReminderAlert(true);
+                }}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
+              >
+                Apri nel Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Drawer: NOTIFICATION CENTER */}
       {isNotificationsOpen && (

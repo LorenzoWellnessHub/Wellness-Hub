@@ -148,7 +148,7 @@ export const CompactWeeklyCalendar: React.FC<CompactWeeklyCalendarProps> = ({
                 {/* Slots in this Day */}
                 <div className="divide-y divide-slate-100 p-1 bg-white">
                   {daySlots.map((slot) => {
-                    const isFull = slot.confirmedCount >= 15;
+                    const isFull = slot.confirmedCount >= 12;
                     const isExpanded = !!expandedSlots[slot.slotId];
 
                     // Group bookings by coach
@@ -172,14 +172,25 @@ export const CompactWeeklyCalendar: React.FC<CompactWeeklyCalendarProps> = ({
                       }
                     });
 
+                    const isFisso = slot.slotType === 'fisso' || (!slot.isCustom && !slot.slotType);
+
                     return (
                       <div key={slot.slotId} className="p-2.5 hover:bg-slate-50/50 rounded-xl transition-colors space-y-2">
                         <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
                           {/* Time & Slot Type */}
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <span className="bg-slate-900 text-white font-mono text-[11px] font-black px-2 py-0.5 rounded-lg flex items-center gap-1">
                               <Clock className="w-3 h-3 text-emerald-400" />
                               {slot.time}
+                            </span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                isFisso
+                                  ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}
+                            >
+                              {isFisso ? 'Fisso' : 'Extra'}
                             </span>
                             <span
                               className={`text-[9px] font-black px-1.5 py-0.2 rounded border uppercase tracking-wider ${
@@ -188,7 +199,7 @@ export const CompactWeeklyCalendar: React.FC<CompactWeeklyCalendarProps> = ({
                                   : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                               }`}
                             >
-                              {slot.confirmedCount}/15 {isFull ? 'Pieno' : 'Posti'}
+                              {slot.confirmedCount}/12 {isFull ? 'Pieno' : 'Posti'}
                             </span>
                           </div>
 

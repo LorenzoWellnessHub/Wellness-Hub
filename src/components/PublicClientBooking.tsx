@@ -427,12 +427,18 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                     </div>
                   </div>
 
-                  {/* Dates Selection Scroll */}
+                  {/* Dates Selection Cards: Orderly & Collected */}
                   <div className="space-y-2 pt-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Giorni Disponibili</label>
-                    <div className="flex flex-wrap gap-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">1. Scegli il Giorno del Trattamento</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                       {uniqueDates.map(dateStr => {
                         const isSelected = selectedDate === dateStr;
+                        const daySlotsCount = slots.filter(s => s.date === dateStr).length;
+                        const d = new Date(dateStr);
+                        const dayName = d.toLocaleDateString('it-IT', { weekday: 'long' });
+                        const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+                        const dateFormatted = d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+
                         return (
                           <button
                             key={dateStr}
@@ -441,13 +447,21 @@ export default function PublicClientBooking({ coachId, onBackToLogin }: PublicCl
                               setSelectedDate(dateStr);
                               setSelectedSlot(null); // reset selected slot on date change
                             }}
-                            className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all text-left border cursor-pointer ${
+                            className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-1.5 cursor-pointer ${
                               isSelected 
-                                ? `${theme.solid} text-white shadow-md border-transparent` 
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                ? `${theme.solid} text-white shadow-md border-transparent ring-2 ring-emerald-500/20` 
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200 hover:border-slate-300'
                             }`}
                           >
-                            {formatItalianDate(dateStr)}
+                            <span className={`text-[10px] font-black uppercase tracking-wider block ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                              {capitalizedDay}
+                            </span>
+                            <span className="font-display font-extrabold text-sm block">
+                              {dateFormatted}
+                            </span>
+                            <span className={`text-[10px] font-semibold flex items-center gap-1 ${isSelected ? 'text-white/90' : 'text-slate-500'}`}>
+                              <Clock className="w-3 h-3" /> {daySlotsCount} {daySlotsCount === 1 ? 'orario' : 'orari'}
+                            </span>
                           </button>
                         );
                       })}
