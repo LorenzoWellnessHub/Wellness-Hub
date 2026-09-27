@@ -5026,9 +5026,8 @@ export default function App() {
 
         {activeTab === 'viso' && (
           <>
-            {/* 4. Filters & Search Section */}
-            <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-              
+            {/* 4. Treatment Info Section */}
+            <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                   <SlidersHorizontal className="w-3.5 h-3.5" /> Trattamento Selezionato:
@@ -5037,22 +5036,6 @@ export default function App() {
                   <span>🌸</span> Trattamenti Viso (12 postazioni per fascia)
                 </span>
               </div>
-
-              {/* Coach filters */}
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">Ospiti di:</span>
-                <select
-                  value={coachFilter}
-                  onChange={(e) => setCoachFilter(e.target.value)}
-                  className="bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl border-none outline-none focus:ring-2 focus:ring-emerald-500/20 w-full md:w-48"
-                >
-                  <option value="all">Tutti i Coach</option>
-                  {coaches.map(c => (
-                    <option key={c.id} value={c.id}>Solo {c.name}</option>
-                  ))}
-                </select>
-              </div>
-
             </section>
 
             {/* 5. Calendar Dynamic Scheduler */}
@@ -5239,11 +5222,7 @@ export default function App() {
                         {/* Day's Slots Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {daySlots.map(slot => {
-                          // Filter bookings shown by selected coach filter
-                          let displayBookings = slot.bookings;
-                          if (coachFilter !== 'all') {
-                            displayBookings = slot.bookings.filter(b => b.coachId === coachFilter);
-                          }
+                          const displayBookings = slot.bookings;
 
                           const isFull = slot.confirmedCount >= 12;
                           const isFisso = (slot.slotType || (slot.isCustom ? 'extra' : 'fisso')) === 'fisso';
@@ -5374,18 +5353,8 @@ export default function App() {
                                         const postNum = i + 1;
                                         const confirmedList = slot.bookings.filter(b => b.status === 'confermato');
                                         const booking = confirmedList[i];
-                                        
-                                        // If coach filter is active, check if this booking belongs to that coach
-                                        if (booking && coachFilter !== 'all' && booking.coachId !== coachFilter) {
-                                          return null;
-                                        }
 
                                         if (!booking) {
-                                          // If no booking at this station and we are filtering by a specific coach, hide empty stations to keep the view clean.
-                                          // Otherwise, if showing all coaches, show it as Libera.
-                                          if (coachFilter !== 'all') {
-                                            return null;
-                                          }
                                           return (
                                             <div 
                                               key={`post-${postNum}`}
@@ -5497,10 +5466,7 @@ export default function App() {
 
                                     {/* 2. Waitlist/Reserves section if any */}
                                     {(() => {
-                                      let reserves = slot.bookings.filter(b => b.status === 'riserva');
-                                      if (coachFilter !== 'all') {
-                                        reserves = reserves.filter(b => b.coachId === coachFilter);
-                                      }
+                                      const reserves = slot.bookings.filter(b => b.status === 'riserva');
 
                                       if (reserves.length === 0) return null;
 
