@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import logoUrl from './assets/images/wellness_hub_logo_1783331564869.jpg';
 import { 
   Users, 
+  User,
   Calendar, 
   Plus, 
   Trash2, 
@@ -39,7 +40,7 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './types';
+import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact, ShakePartyConfig, HomConfig } from './types';
 import PublicClientBooking from './components/PublicClientBooking';
 import { PersonalReport } from './components/PersonalReport';
 import { AdminReport } from './components/AdminReport';
@@ -51,6 +52,8 @@ import {
   formatItalianMonth,
   parseBookingSlotId,
   getWeekDates,
+  getTodayDateStr,
+  getNextTuesday,
 } from './utils/dateUtils';
 
 
@@ -63,7 +66,7 @@ export default function App() {
   const [allBookings, setAllBookings] = useState<ComputedBooking[]>([]);
   const [allCustomSlots, setAllCustomSlots] = useState<Slot[]>([]);
   const [currentCoachId, setCurrentCoachId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'resoconto'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'viso' | 'corpo' | 'shakeparty' | 'hom' | 'resoconto'>('dashboard');
   const [selectedCorpoDate, setSelectedCorpoDate] = useState<string>('');
   const [selectedVisoDate, setSelectedVisoDate] = useState<string>('');
   const [visoViewMode, setVisoViewMode] = useState<'single' | 'all'>('single');
@@ -269,6 +272,34 @@ export default function App() {
   const [eventFormDescription, setEventFormDescription] = useState<string>('');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
+  // Shake Party states
+  const [shakePartyConfig, setShakePartyConfig] = useState<ShakePartyConfig>({ date: '', time: '20:30', title: 'Shake Party Mensile', notes: '' });
+  const [isEditingShakeConfig, setIsEditingShakeConfig] = useState<boolean>(false);
+  const [editShakeDate, setEditShakeDate] = useState<string>('');
+  const [editShakeTime, setEditShakeTime] = useState<string>('20:30');
+  const [editShakeTitle, setEditShakeTitle] = useState<string>('Shake Party Mensile');
+  const [editShakeNotes, setEditShakeNotes] = useState<string>('');
+  const [shakeGuestName, setShakeGuestName] = useState<string>('');
+  const [shakeSecondGuestName, setShakeSecondGuestName] = useState<string>('');
+  const [shakePartySize, setShakePartySize] = useState<number>(1);
+  const [shakeNotes, setShakeNotes] = useState<string>('');
+  const [isBookingShake, setIsBookingShake] = useState<boolean>(false);
+
+  // HOM (Herbalife Opportunity Meeting) states
+  const [homConfig, setHomConfig] = useState<HomConfig>({ time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' });
+  const [isEditingHomConfig, setIsEditingHomConfig] = useState<boolean>(false);
+  const [editHomTime, setEditHomTime] = useState<string>('20:30');
+  const [editHomTitle, setEditHomTitle] = useState<string>('HOM - Herbalife Opportunity Meeting');
+  const [editHomNotes, setEditHomNotes] = useState<string>('');
+  const [homGuestName, setHomGuestName] = useState<string>('');
+  const [homSecondGuestName, setHomSecondGuestName] = useState<string>('');
+  const [homPartySize, setHomPartySize] = useState<number>(1);
+  const [homNotes, setHomNotes] = useState<string>('');
+  const [isBookingHom, setIsBookingHom] = useState<boolean>(false);
+
+  // Queue Guide on Dashboard toggle state
+  const [showQueueGuide, setShowQueueGuide] = useState<boolean>(false);
+
   const handleCloseDetails = () => {
     setSelectedCoachForDetails(null);
     setIsEditingCoach(false);
@@ -287,6 +318,8 @@ export default function App() {
 
   // Form states
   const [newGuestName, setNewGuestName] = useState('');
+  const [newSecondGuestName, setNewSecondGuestName] = useState('');
+  const [bookingPartySize, setBookingPartySize] = useState<number>(1);
   const [newGuestNotes, setNewGuestNotes] = useState('');
   const [newCoachName, setNewCoachName] = useState('');
   const [newCoachColor, setNewCoachColor] = useState('emerald');
@@ -352,6 +385,19 @@ export default function App() {
       setSlotRestrictions(data.slotRestrictions || {});
       setMembers(data.members || []);
       setMaxFutureWeeks(data.maxFutureWeeks !== undefined ? data.maxFutureWeeks : 2);
+      if (data.shakePartyConfig) {
+        setShakePartyConfig(data.shakePartyConfig);
+        setEditShakeDate(data.shakePartyConfig.date || '');
+        setEditShakeTime(data.shakePartyConfig.time || '20:30');
+        setEditShakeTitle(data.shakePartyConfig.title || 'Shake Party Mensile');
+        setEditShakeNotes(data.shakePartyConfig.notes || '');
+      }
+      if (data.homConfig) {
+        setHomConfig(data.homConfig);
+        setEditHomTime(data.homConfig.time || '20:30');
+        setEditHomTitle(data.homConfig.title || 'HOM - Herbalife Opportunity Meeting');
+        setEditHomNotes(data.homConfig.notes || '');
+      }
       
       // Fetch admin password config
       const adminConfResponse = await fetch('/api/admin/config');
@@ -387,6 +433,19 @@ export default function App() {
         if (adminData.satispayUrl !== undefined) {
           setSatispayUrl(adminData.satispayUrl);
           setNewSatispayUrl(adminData.satispayUrl);
+        }
+        if (adminData.shakePartyConfig) {
+          setShakePartyConfig(adminData.shakePartyConfig);
+          setEditShakeDate(adminData.shakePartyConfig.date || '');
+          setEditShakeTime(adminData.shakePartyConfig.time || '20:30');
+          setEditShakeTitle(adminData.shakePartyConfig.title || 'Shake Party Mensile');
+          setEditShakeNotes(adminData.shakePartyConfig.notes || '');
+        }
+        if (adminData.homConfig) {
+          setHomConfig(adminData.homConfig);
+          setEditHomTime(adminData.homConfig.time || '20:30');
+          setEditHomTitle(adminData.homConfig.title || 'HOM - Herbalife Opportunity Meeting');
+          setEditHomNotes(adminData.homConfig.notes || '');
         }
       }
 
@@ -491,7 +550,8 @@ export default function App() {
   useEffect(() => {
     if (selectedMonday) {
       setSelectedCorpoDate(selectedMonday);
-      setSelectedVisoDate(selectedMonday);
+      const today = getTodayDateStr();
+      setSelectedVisoDate(today >= selectedMonday ? today : selectedMonday);
       setMultiSlotDate(selectedMonday);
     }
   }, [selectedMonday]);
@@ -566,6 +626,7 @@ export default function App() {
   const handleAddBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeBookingSlot || !currentCoachId || !newGuestName.trim()) return;
+    if (bookingPartySize === 2 && !newSecondGuestName.trim()) return;
 
     setActionLoading(true);
     setErrorMessage('');
@@ -579,6 +640,8 @@ export default function App() {
           slotId: activeBookingSlot.slotId,
           coachId: currentCoachId,
           guestName: newGuestName.trim(),
+          secondGuestName: bookingPartySize === 2 ? newSecondGuestName.trim() : '',
+          partySize: bookingPartySize,
           notes: newGuestNotes.trim()
         })
       });
@@ -591,10 +654,16 @@ export default function App() {
       await fetchData();
       
       const coachName = coaches.find(c => c.id === currentCoachId)?.name || 'Coach';
-      setSuccessMessage(`Ospite "${newGuestName}" inserito con successo per il coach ${coachName}!`);
+      if (bookingPartySize === 2) {
+        setSuccessMessage(`Prenotazione per 2 persone completata ("${newGuestName.trim()}" e "${newSecondGuestName.trim()}") con successo per il coach ${coachName}!`);
+      } else {
+        setSuccessMessage(`Ospite "${newGuestName.trim()}" inserito con successo per il coach ${coachName}!`);
+      }
       
       // Reset form & modal
       setNewGuestName('');
+      setNewSecondGuestName('');
+      setBookingPartySize(1);
       setNewGuestNotes('');
       setActiveBookingSlot(null);
       
@@ -677,6 +746,188 @@ export default function App() {
       setErrorMessage(err.message || 'Impossibile eliminare la prenotazione.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Save Shake Party configuration (Admin)
+  const handleSaveShakeConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editShakeDate) {
+      setErrorMessage('Seleziona una data per lo Shake Party.');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const updatedConfig: ShakePartyConfig = {
+        date: editShakeDate,
+        time: editShakeTime || '20:30',
+        title: editShakeTitle.trim() || 'Shake Party Mensile',
+        notes: editShakeNotes.trim()
+      };
+      const response = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shakePartyConfig: updatedConfig })
+      });
+      if (!response.ok) {
+        throw new Error('Errore durante il salvataggio della data Shake Party.');
+      }
+      setShakePartyConfig(updatedConfig);
+      setIsEditingShakeConfig(false);
+      setSuccessMessage('Data e dettagli Shake Party salvati con successo!');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile salvare la configurazione.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Save HOM configuration (Admin)
+  const handleSaveHomConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const updatedConfig: HomConfig = {
+        time: editHomTime || '20:30',
+        title: editHomTitle.trim() || 'HOM - Herbalife Opportunity Meeting',
+        notes: editHomNotes.trim()
+      };
+      const response = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ homConfig: updatedConfig })
+      });
+      if (!response.ok) {
+        throw new Error('Errore durante il salvataggio dei dettagli HOM.');
+      }
+      setHomConfig(updatedConfig);
+      setIsEditingHomConfig(false);
+      setSuccessMessage('Orario e note evento HOM salvati con successo!');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile salvare la configurazione.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Book a place for Shake Party
+  const handleBookShakeParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shakePartyConfig.date) {
+      setErrorMessage("La data per lo Shake Party non è ancora stata impostata dall'amministratore.");
+      return;
+    }
+    if (!currentCoachId) {
+      setErrorMessage('Seleziona un Coach prima di effettuare la prenotazione.');
+      return;
+    }
+    if (!shakeGuestName.trim()) return;
+    if (shakePartySize === 2 && !shakeSecondGuestName.trim()) return;
+
+    setIsBookingShake(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const slotId = `shakeparty_${shakePartyConfig.date}`;
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          coachId: currentCoachId,
+          guestName: shakeGuestName.trim(),
+          secondGuestName: shakePartySize === 2 ? shakeSecondGuestName.trim() : '',
+          partySize: shakePartySize,
+          notes: shakeNotes.trim()
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Errore durante la prenotazione.');
+      }
+
+      await fetchData();
+
+      const coachName = coaches.find(c => c.id === currentCoachId)?.name || 'Coach';
+      if (shakePartySize === 2) {
+        setSuccessMessage(`Postazioni Shake Party prenotate per "${shakeGuestName.trim()}" e "${shakeSecondGuestName.trim()}" per il coach ${coachName}!`);
+      } else {
+        setSuccessMessage(`Postazione Shake Party prenotata per "${shakeGuestName.trim()}" per il coach ${coachName}!`);
+      }
+
+      setShakeGuestName('');
+      setShakeSecondGuestName('');
+      setShakePartySize(1);
+      setShakeNotes('');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile completare la prenotazione Shake Party.');
+    } finally {
+      setIsBookingShake(false);
+    }
+  };
+
+  // Book a place for HOM (Next Tuesday)
+  const handleBookHom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const homTuesdayDate = getNextTuesday();
+    if (!currentCoachId) {
+      setErrorMessage('Seleziona un Coach prima di effettuare la prenotazione.');
+      return;
+    }
+    if (!homGuestName.trim()) return;
+    if (homPartySize === 2 && !homSecondGuestName.trim()) return;
+
+    setIsBookingHom(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const slotId = `hom_${homTuesdayDate}`;
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          coachId: currentCoachId,
+          guestName: homGuestName.trim(),
+          secondGuestName: homPartySize === 2 ? homSecondGuestName.trim() : '',
+          partySize: homPartySize,
+          notes: homNotes.trim()
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Errore durante la prenotazione.');
+      }
+
+      await fetchData();
+
+      const coachName = coaches.find(c => c.id === currentCoachId)?.name || 'Coach';
+      if (homPartySize === 2) {
+        setSuccessMessage(`Postazioni HOM prenotate per "${homGuestName.trim()}" e "${homSecondGuestName.trim()}" per il coach ${coachName}!`);
+      } else {
+        setSuccessMessage(`Postazione HOM prenotata per "${homGuestName.trim()}" per il coach ${coachName}!`);
+      }
+
+      setHomGuestName('');
+      setHomSecondGuestName('');
+      setHomPartySize(1);
+      setHomNotes('');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Impossibile completare la prenotazione HOM.');
+    } finally {
+      setIsBookingHom(false);
     }
   };
 
@@ -2903,6 +3154,27 @@ export default function App() {
 
   const groupedSlots = getGroupedSlots();
   const sortedDates = Object.keys(groupedSlots).sort();
+  const todayLocalStr = getTodayDateStr();
+  // Filter for Viso (Skin Care) bookings section: only current day and future days, automatically hiding past days
+  const visoVisibleDates = useMemo(() => {
+    return sortedDates.filter(d => d >= todayLocalStr);
+  }, [sortedDates, todayLocalStr]);
+
+  // HOM date calculation: always the next upcoming Tuesday relative to current date
+  const homDate = getNextTuesday();
+
+  // Shake Party bookings (unlimited positions)
+  const shakePartySlotId = shakePartyConfig.date ? `shakeparty_${shakePartyConfig.date}` : '';
+  const shakeBookings = useMemo(() => {
+    if (!shakePartySlotId) return [];
+    return allBookings.filter(b => b.slotId === shakePartySlotId);
+  }, [allBookings, shakePartySlotId]);
+
+  // HOM bookings (unlimited positions)
+  const homSlotId = `hom_${homDate}`;
+  const homBookings = useMemo(() => {
+    return allBookings.filter(b => b.slotId === homSlotId);
+  }, [allBookings, homSlotId]);
 
   const weekDates = getWeekDates(selectedMonday);
 
@@ -4860,6 +5132,28 @@ export default function App() {
             <span className="text-base">⚖️</span>
             Valutazioni Corporee
           </button>
+          <button
+            onClick={() => setActiveTab('shakeparty')}
+            className={`px-6 py-3.5 border-b-2 text-sm font-bold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+              activeTab === 'shakeparty'
+                ? 'border-purple-600 text-purple-700 font-extrabold bg-purple-50/10'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span className="text-base">🥤</span>
+            Shake Party
+          </button>
+          <button
+            onClick={() => setActiveTab('hom')}
+            className={`px-6 py-3.5 border-b-2 text-sm font-bold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+              activeTab === 'hom'
+                ? 'border-blue-600 text-blue-700 font-extrabold bg-blue-50/10'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span className="text-base">🏢</span>
+            HOM
+          </button>
           {isAdminMode && (
             <button
               onClick={() => setActiveTab('resoconto')}
@@ -4876,7 +5170,7 @@ export default function App() {
         </div>
 
         {/* 2. Calendar Week Navigation & Controls Dashboard */}
-        {activeTab !== 'dashboard' && (
+        {(activeTab === 'viso' || activeTab === 'corpo' || activeTab === 'resoconto') && (
           <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
             
             {/* Week Nav */}
@@ -4993,6 +5287,139 @@ export default function App() {
               coaches={coaches}
               getCoachColorClasses={getCoachColorClasses}
             />
+
+            {/* 3. Guida al Sistema della Coda (Consultabile on-demand per mantenere la dashboard pulita) */}
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-xs transition-all space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-slate-900 text-emerald-400 flex items-center justify-center shrink-0 shadow-xs">
+                    <Scale className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-display font-extrabold text-slate-800 text-base">Guida al Sistema della Coda & Priorità</h4>
+                      <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                        Automatica
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Consulta le regole di assegnazione automatica dei 12 posti, quota prioritaria (4 posti) e scorrimento della riserva.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQueueGuide(!showQueueGuide)}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-xs hover:shadow-md"
+                >
+                  <HelpCircle className="w-4 h-4 text-emerald-400" />
+                  <span>{showQueueGuide ? 'Nascondi Guida' : 'Consulta Guida della Coda'}</span>
+                </button>
+              </div>
+
+              {showQueueGuide && (
+                <div className="pt-4 border-t border-slate-100 animate-slide-down">
+                  <section className="bg-slate-900 text-white rounded-2xl p-5 sm:p-7 space-y-6 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider">GUIDA AL SISTEMA</span>
+                          <span className="bg-emerald-950 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-900">Automatico</span>
+                        </div>
+                        <h3 className="font-display font-extrabold text-xl text-white mt-1">
+                          La Coda Equilibrata di Riserva
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700 text-xs text-slate-300">
+                        <Scale className="w-4 h-4 text-emerald-400" />
+                        <span>Priorità garantita per chi ha meno ospiti attivi</span>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-6 text-sm">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 font-bold text-slate-200">
+                          <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">1</span>
+                          <span>Quota Prioritaria</span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Tutti i coach possono prenotare ospiti. I primi <strong>4 ospiti</strong> inseriti da ciascun coach hanno lo status prioritario di prenotazione, se ci sono ancora delle postazioni libere nel club.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 font-bold text-slate-200">
+                          <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">2</span>
+                          <span>Attivazione Riserva</span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Quando il turno raggiunge le 12 postazioni, i successivi ospiti inseriti finiscono in lista d&apos;attesa. Ma se un coach che ha pochi ospiti ne inserisce uno, questo passa automaticamente davanti!
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 font-bold text-slate-200">
+                          <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">3</span>
+                          <span>Assegnazione Dinamica</span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Se elimini un ospite, la coda si riordina da sola. Un ospite in lista d&apos;attesa del coach con meno clientela verrà immediatamente confermato per riempire il posto vuoto!
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Demonstration Diagram */}
+                    <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block text-center">Simulazione Grafica dell&apos;Assegnazione</span>
+                      
+                      <div className="flex flex-col md:flex-row items-stretch justify-around gap-4 text-xs">
+                        <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 space-y-2">
+                          <span className="font-bold text-slate-300 block text-center border-b border-slate-800 pb-1.5">Coach Lorenzo (4 ospiti)</span>
+                          <div className="space-y-1">
+                            <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
+                              <span className="text-emerald-400 font-bold">1° - 4° Ospite</span>
+                              <span className="text-emerald-500">Confermati ✓</span>
+                            </div>
+                            <div className="flex justify-between bg-amber-950/40 border border-amber-900/50 p-1 px-2 rounded text-[11px]">
+                              <span className="text-amber-400 font-bold">5° Ospite</span>
+                              <span className="text-amber-500">In Riserva ⏱</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-center font-bold text-emerald-400 py-2">
+                          <span>⚡️</span>
+                        </div>
+
+                        <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 space-y-2">
+                          <span className="font-bold text-slate-300 block text-center border-b border-slate-800 pb-1.5">Coach Anna (2 ospiti)</span>
+                          <div className="space-y-1">
+                            <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
+                              <span className="text-emerald-400 font-bold">1° e 2° Ospite</span>
+                              <span className="text-emerald-500">Confermati ✓</span>
+                            </div>
+                            <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
+                              <span className="text-emerald-300 font-bold">3° Ospite (Nuovo)</span>
+                              <span className="text-emerald-400 font-bold">Salta la coda! ✓</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 flex flex-col justify-center text-center space-y-1">
+                          <span className="font-bold text-emerald-400">Esito Automatico:</span>
+                          <p className="text-[11px] text-slate-300 leading-normal">
+                            Il 3° ospite di Anna viene inserito direttamente nel club occupando un posto, mentre il 5° di Lorenzo aspetta in riserva perché Lorenzo ha già 4 ospiti attivi.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -5044,14 +5471,14 @@ export default function App() {
                 <div className="inline-block w-12 h-12 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin"></div>
                 <p className="text-sm font-medium text-slate-500">Recupero del calendario del club in corso...</p>
               </div>
-            ) : sortedDates.length === 0 ? (
+            ) : visoVisibleDates.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-3xl p-12 shadow-xs text-center space-y-4">
                 <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto border border-slate-200">
                   <Calendar className="w-8 h-8 text-slate-400" />
                 </div>
                 <h3 className="font-display font-bold text-slate-700 text-lg">Nessun turno disponibile</h3>
                 <p className="text-sm text-slate-500 max-w-md mx-auto">
-                  Non ci sono turni standard o personalizzati configurati per questa settimana.{isAdminMode && ' Clicca su "Nuovo Turno Settimanale" per aggiungerne uno personalizzato!'}
+                  I turni dei giorni passati vengono nascosti automaticamente. Non ci sono turni per oggi o per i giorni successivi in questa settimana.{isAdminMode && ' Clicca su "Nuovo Turno Settimanale" per aggiungerne uno personalizzato!'}
                 </p>
               </div>
             ) : (
@@ -5065,7 +5492,7 @@ export default function App() {
                         Scelta del Giorno per i Trattamenti Viso
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Seleziona un giorno per vedere gli orari, le prenotazioni e la disponibilità delle 12 postazioni
+                        Visualizzazione attiva solo per oggi e giorni successivi (i giorni passati sono nascosti automaticamente). Seleziona un giorno per vedere gli orari, le prenotazioni e la disponibilità delle 12 postazioni.
                       </p>
                     </div>
 
@@ -5074,7 +5501,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            setMultiSlotDate(selectedVisoDate || sortedDates[0] || new Date().toISOString().split('T')[0]);
+                            setMultiSlotDate(selectedVisoDate && visoVisibleDates.includes(selectedVisoDate) ? selectedVisoDate : (visoVisibleDates[0] || todayLocalStr));
                             handleApplyPreset('pomeriggio');
                             setShowMultiSlotModal(true);
                           }}
@@ -5099,9 +5526,10 @@ export default function App() {
 
                   {/* Days list: ordered & collected compact cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
-                    {sortedDates.map((dateStr) => {
+                    {visoVisibleDates.map((dateStr) => {
                       const dayName = getItalianDayName(dateStr);
-                      const isSelected = visoViewMode === 'single' && (selectedVisoDate === dateStr || (!selectedVisoDate && sortedDates[0] === dateStr));
+                      const isToday = dateStr === todayLocalStr;
+                      const isSelected = visoViewMode === 'single' && (selectedVisoDate === dateStr || (!visoVisibleDates.includes(selectedVisoDate) && visoVisibleDates[0] === dateStr));
                       const daySlots = groupedSlots[dateStr] || [];
                       const totalDayBookings = daySlots.reduce((acc, s) => acc + s.confirmedCount, 0);
                       const totalDayCapacity = daySlots.length * 12;
@@ -5123,9 +5551,18 @@ export default function App() {
                           }`}
                         >
                           <div>
-                            <span className={`text-[10px] font-black uppercase tracking-wider block ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
-                              {dayName}
-                            </span>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className={`text-[10px] font-black uppercase tracking-wider block ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
+                                {dayName}
+                              </span>
+                              {isToday && (
+                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full ${
+                                  isSelected ? 'bg-white text-emerald-700' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                }`}>
+                                  Oggi
+                                </span>
+                              )}
+                            </div>
                             <span className="font-display font-extrabold text-base leading-tight block mt-0.5">
                               {formatItalianDate(dateStr).split(' ')[0]} {formatItalianDate(dateStr).split(' ')[1]}
                             </span>
@@ -5165,12 +5602,12 @@ export default function App() {
 
                 {/* Day's Slots View */}
                 {(() => {
-                  const activeDayDate = (selectedVisoDate && sortedDates.includes(selectedVisoDate))
+                  const activeDayDate = (selectedVisoDate && visoVisibleDates.includes(selectedVisoDate))
                     ? selectedVisoDate
-                    : sortedDates[0];
+                    : visoVisibleDates[0];
                   const datesToRender = visoViewMode === 'single' && activeDayDate
                     ? [activeDayDate]
-                    : sortedDates;
+                    : visoVisibleDates;
 
                   return datesToRender.map(dateStr => {
                     const daySlots = groupedSlots[dateStr] || [];
@@ -5582,7 +6019,11 @@ export default function App() {
                               <div className="pt-2 border-t border-slate-100">
                                 {activeCoach ? (
                                   <button
-                                    onClick={() => setActiveBookingSlot(slot)}
+                                    onClick={() => {
+                                      setActiveBookingSlot(slot);
+                                      setBookingPartySize(1);
+                                      setNewSecondGuestName('');
+                                    }}
                                     className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
                                       getCoachColorClasses(activeCoach.color).bg
                                     } ${getCoachColorClasses(activeCoach.color).text} hover:opacity-90`}
@@ -5997,6 +6438,868 @@ export default function App() {
           </>
         )}
 
+        {/* SHAKE PARTY SECTION */}
+        {activeTab === 'shakeparty' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Header Banner */}
+            <div className="bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/15 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-60 h-60 bg-pink-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="relative z-10 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🥤</span>
+                      <span className="text-xs text-purple-300 font-extrabold uppercase tracking-wider">EVENTO MENSILE</span>
+                      <span className="bg-purple-950/80 text-purple-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-800">
+                        Postazioni Illimitate ✨
+                      </span>
+                    </div>
+                    <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-white">
+                      {shakePartyConfig.title || 'Shake Party Mensile'}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-purple-200/80 max-w-2xl">
+                      Festa degustazione mensile e scoperta di benessere con Herbalife Nutrition. In questa scheda puoi prenotare i posti per tutti i tuoi ospiti senza limiti di capienza: tutte le postazioni prenotate sono confermate!
+                    </p>
+                  </div>
+
+                  {isAdminMode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditShakeDate(shakePartyConfig.date || '');
+                        setEditShakeTime(shakePartyConfig.time || '20:30');
+                        setEditShakeTitle(shakePartyConfig.title || 'Shake Party Mensile');
+                        setEditShakeNotes(shakePartyConfig.notes || '');
+                        setIsEditingShakeConfig(!isEditingShakeConfig);
+                      }}
+                      className="px-4 py-2.5 bg-purple-600/80 hover:bg-purple-600 text-white text-xs font-bold rounded-2xl transition-all border border-purple-400/30 flex items-center gap-2 shadow-xs shrink-0 cursor-pointer self-start sm:self-center"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>{isEditingShakeConfig ? 'Chiudi Impostazioni' : 'Imposta Data Shake Party'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Admin configuration editor */}
+                {isAdminMode && isEditingShakeConfig && (
+                  <form onSubmit={handleSaveShakeConfig} className="bg-slate-900/90 border border-purple-500/30 rounded-2xl p-5 space-y-4 animate-slide-down mt-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-purple-300 border-b border-slate-800 pb-2">
+                      <Calendar className="w-4 h-4 text-purple-400" />
+                      <span>Configurazione Data Shake Party (Admin)</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Data Evento *</label>
+                        <input
+                          type="date"
+                          required
+                          value={editShakeDate}
+                          onChange={(e) => setEditShakeDate(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Orario Inizio *</label>
+                        <input
+                          type="time"
+                          required
+                          value={editShakeTime}
+                          onChange={(e) => setEditShakeTime(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Titolo Evento</label>
+                        <input
+                          type="text"
+                          value={editShakeTitle}
+                          onChange={(e) => setEditShakeTitle(e.target.value)}
+                          placeholder="Shake Party Mensile"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Note o Dettagli per i Coach (Opzionali)</label>
+                      <input
+                        type="text"
+                        value={editShakeNotes}
+                        onChange={(e) => setEditShakeNotes(e.target.value)}
+                        placeholder="Es. Portare uno shaker, ricette speciali e degustazione nuovi prodotti..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingShakeConfig(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        Annulla
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={actionLoading || !editShakeDate}
+                        className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+                      >
+                        Salva Data e Dettagli
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Date and info badge */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+                  <div className="bg-slate-950/60 border border-purple-500/20 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0">
+                      <Calendar className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-purple-300/80 uppercase tracking-wider block">Data Programmata</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        {shakePartyConfig.date ? (
+                          <>
+                            {getItalianDayName(shakePartyConfig.date)} {formatItalianDateWithYear(shakePartyConfig.date)}
+                          </>
+                        ) : (
+                          <span className="text-amber-400 italic">Data non ancora impostata</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 border border-purple-500/20 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-purple-300/80 uppercase tracking-wider block">Orario Inizio</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        Ore {shakePartyConfig.time || '20:30'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 border border-purple-500/20 rounded-2xl p-4 flex items-center gap-3.5 sm:col-span-2 md:col-span-1">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-300/80 uppercase tracking-wider block">Totale Postazioni</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        {shakeBookings.length} {shakeBookings.length === 1 ? 'Postazione' : 'Postazioni'} (Senza Limiti)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {shakePartyConfig.notes && (
+                  <div className="bg-purple-950/50 border border-purple-500/30 rounded-2xl p-3.5 text-xs text-purple-200 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <span>{shakePartyConfig.notes}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* If no date is set */}
+            {!shakePartyConfig.date ? (
+              <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center space-y-3 shadow-xs">
+                <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto">
+                  <Calendar className="w-7 h-7" />
+                </div>
+                <h3 className="font-display font-extrabold text-slate-800 text-lg">Data Shake Party non ancora definita</h3>
+                <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+                  L&apos;amministratore imposterà la data mensile dello Shake Party. Non appena fissata, potrai prenotare le postazioni per te e i tuoi ospiti!
+                </p>
+                {isAdminMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditShakeDate(getTodayDateStr());
+                      setEditShakeTime('20:30');
+                      setIsEditingShakeConfig(true);
+                    }}
+                    className="mt-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>Imposta la Data Adesso</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Form Prenotazione Postazione */}
+                <div className="lg:col-span-1">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-5 sticky top-24">
+                    <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                      <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                        <UserPlus className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-display font-bold text-slate-800 text-base">Prenota Postazione</h3>
+                        <p className="text-xs text-slate-400">Postazioni senza limiti di capienza</p>
+                      </div>
+                    </div>
+
+                    {activeCoach && (
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-500">Prenotato da Coach:</span>
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${getCoachColorClasses(activeCoach.color).solid}`} />
+                          {activeCoach.name}
+                        </span>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleBookShakeParty} className="space-y-4">
+                      {/* Sola o in 2 */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                          Partecipanti da prenotare
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShakePartySize(1)}
+                            className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              shakePartySize === 1
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <User className="w-3.5 h-3.5" />
+                            <span>Viene da sola (1)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShakePartySize(2)}
+                            className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              shakePartySize === 2
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Vengono in 2 (2)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">
+                          {shakePartySize === 2 ? 'Nome 1° Ospite *' : 'Nome dell\'Ospite *'}
+                        </label>
+                        <input
+                          list="guest-names-datalist"
+                          type="text"
+                          required
+                          placeholder={shakePartySize === 2 ? "Nome e Cognome 1° ospite" : "Nome e Cognome ospite"}
+                          value={shakeGuestName}
+                          onChange={(e) => setShakeGuestName(e.target.value)}
+                          className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-purple-500/25 focus:border-purple-500 outline-none font-medium"
+                        />
+                      </div>
+
+                      {shakePartySize === 2 && (
+                        <div className="animate-fade-in space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-slate-600">
+                              Nome 2° Ospite / Accompagnatore *
+                            </label>
+                            <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                              Occupa 2° posto
+                            </span>
+                          </div>
+                          <input
+                            list="guest-names-datalist"
+                            type="text"
+                            required
+                            placeholder="Nome e Cognome 2° ospite"
+                            value={shakeSecondGuestName}
+                            onChange={(e) => setShakeSecondGuestName(e.target.value)}
+                            className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-purple-500/25 focus:border-purple-500 outline-none font-medium"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">
+                          Note (Opzionale)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Es. Intolleranze, gusti preferiti, prima volta..."
+                          value={shakeNotes}
+                          onChange={(e) => setShakeNotes(e.target.value)}
+                          className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-purple-500/25 focus:border-purple-500 outline-none font-medium"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={
+                          isBookingShake ||
+                          !shakeGuestName.trim() ||
+                          (shakePartySize === 2 && !shakeSecondGuestName.trim()) ||
+                          checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'
+                        }
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-3 rounded-xl transition-all shadow-sm shadow-purple-600/20 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isBookingShake ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            <span>{shakePartySize === 2 ? 'Conferma Prenotazione (2 Postazioni)' : 'Conferma Prenotazione'}</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* Elenco Postazioni Prenotate */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-display font-bold text-slate-800 text-base">
+                            Postazioni Prenotate ({shakeBookings.length})
+                          </h3>
+                          <p className="text-xs text-slate-400">Tutti gli ospiti sono confermati (senza limiti di postazioni)</p>
+                        </div>
+                      </div>
+                      <span className="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Tutti Confermati
+                      </span>
+                    </div>
+
+                    {shakeBookings.length === 0 ? (
+                      <div className="py-12 text-center space-y-3">
+                        <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                          <Users className="w-6 h-6" />
+                        </div>
+                        <p className="text-sm font-bold text-slate-700">Nessuna postazione ancora prenotata</p>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                          Sii il primo ad aggiungere i tuoi ospiti per questa fantastica serata di festa e degustazione!
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {shakeBookings.map((b) => {
+                          const bCoach = coaches.find(c => c.id === b.coachId);
+                          const coachStyles = getCoachColorClasses(bCoach?.color || 'emerald');
+                          const canManage = b.coachId === currentCoachId || isAdminMode;
+
+                          return (
+                            <div
+                              key={b.id}
+                              className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all space-y-2.5 flex flex-col justify-between"
+                            >
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  {editingBookingId === b.id ? (
+                                    <div className="flex items-center gap-1.5 w-full">
+                                      <input
+                                        type="text"
+                                        value={editingGuestName}
+                                        onChange={(e) => setEditingGuestName(e.target.value)}
+                                        className="text-xs border border-purple-400 rounded-lg px-2 py-1 flex-1 font-bold outline-none"
+                                        autoFocus
+                                      />
+                                      <button
+                                        onClick={() => handleSaveBookingName(b.id, b.coachId)}
+                                        className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-emerald-50 shrink-0"
+                                        title="Salva"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => { setEditingBookingId(null); setEditingGuestName(''); }}
+                                        className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200/50 shrink-0"
+                                        title="Annulla"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5">
+                                      <h4 className="text-sm font-bold text-slate-900">{b.guestName}</h4>
+                                      {canManage && (
+                                        <button
+                                          onClick={() => {
+                                            setEditingBookingId(b.id);
+                                            setEditingGuestName(b.guestName);
+                                          }}
+                                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+                                          title="Modifica nome ospite"
+                                        >
+                                          <Pencil className="w-2.5 h-2.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <span className="bg-emerald-100/70 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                                    Confermato ✓
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
+                                    Coach {bCoach?.name || 'Sconosciuto'}
+                                  </span>
+                                </div>
+
+                                {b.notes && (
+                                  <p className="text-xs text-slate-500 italic bg-white p-2 rounded-xl border border-slate-100">
+                                    &quot;{b.notes}&quot;
+                                  </p>
+                                )}
+                              </div>
+
+                              {canManage && editingBookingId !== b.id && (
+                                <div className="flex justify-end pt-1">
+                                  <button
+                                    onClick={() => handleDeleteBooking(b.id, b.guestName, b.coachId)}
+                                    className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-xl transition-all cursor-pointer text-xs flex items-center gap-1"
+                                    title="Annulla Postazione"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Cancella</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* HOM SECTION */}
+        {activeTab === 'hom' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Header Banner */}
+            <div className="bg-gradient-to-br from-blue-950 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-60 h-60 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="relative z-10 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🏢</span>
+                      <span className="text-xs text-blue-300 font-extrabold uppercase tracking-wider">EVENTO SETTIMANALE</span>
+                      <span className="bg-blue-950/80 text-blue-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-800">
+                        Postazioni Illimitate ✨
+                      </span>
+                    </div>
+                    <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-white">
+                      {homConfig.title || 'HOM - Herbalife Opportunity Meeting'}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-blue-200/80 max-w-2xl">
+                      Incontro di presentazione aziendale e opportunità di benessere Herbalife. L&apos;evento si svolge sempre ogni martedì sera: viene visualizzato e prenotabile solo il martedì successivo, senza alcun limite di postazioni!
+                    </p>
+                  </div>
+
+                  {isAdminMode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditHomTime(homConfig.time || '20:30');
+                        setEditHomTitle(homConfig.title || 'HOM - Herbalife Opportunity Meeting');
+                        setEditHomNotes(homConfig.notes || '');
+                        setIsEditingHomConfig(!isEditingHomConfig);
+                      }}
+                      className="px-4 py-2.5 bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-bold rounded-2xl transition-all border border-blue-400/30 flex items-center gap-2 shadow-xs shrink-0 cursor-pointer self-start sm:self-center"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>{isEditingHomConfig ? 'Chiudi Dettagli' : 'Personalizza Orario/Note'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Admin configuration editor */}
+                {isAdminMode && isEditingHomConfig && (
+                  <form onSubmit={handleSaveHomConfig} className="bg-slate-900/90 border border-blue-500/30 rounded-2xl p-5 space-y-4 animate-slide-down mt-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-blue-300 border-b border-slate-800 pb-2">
+                      <Clock className="w-4 h-4 text-blue-400" />
+                      <span>Personalizzazione Evento HOM (Admin)</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Orario Inizio *</label>
+                        <input
+                          type="time"
+                          required
+                          value={editHomTime}
+                          onChange={(e) => setEditHomTime(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Titolo Evento</label>
+                        <input
+                          type="text"
+                          value={editHomTitle}
+                          onChange={(e) => setEditHomTitle(e.target.value)}
+                          placeholder="HOM - Herbalife Opportunity Meeting"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Note o Info per i Coach (Opzionali)</label>
+                      <input
+                        type="text"
+                        value={editHomNotes}
+                        onChange={(e) => setEditHomNotes(e.target.value)}
+                        placeholder="Es. Presentarsi 15 minuti prima, dress code smart casual..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingHomConfig(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        Annulla
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={actionLoading}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+                      >
+                        Salva Dettagli HOM
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Date and info badge */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="bg-slate-950/60 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center shrink-0">
+                      <Calendar className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-blue-300/80 uppercase tracking-wider block">Prossimo Martedì Attivo</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        {getItalianDayName(homDate)} {formatItalianDateWithYear(homDate)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center shrink-0">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-blue-300/80 uppercase tracking-wider block">Orario Inizio</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        Ore {homConfig.time || '20:30'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-300/80 uppercase tracking-wider block">Totale Postazioni</span>
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        {homBookings.length} {homBookings.length === 1 ? 'Postazione' : 'Postazioni'} (Senza Limiti)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {homConfig.notes && (
+                  <div className="bg-blue-950/50 border border-blue-500/30 rounded-2xl p-3.5 text-xs text-blue-200 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <span>{homConfig.notes}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Booking & List Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Prenotazione Postazione */}
+              <div className="lg:col-span-1">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-5 sticky top-24">
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <UserPlus className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-slate-800 text-base">Prenota per Martedì</h3>
+                      <p className="text-xs text-slate-400">{formatItalianDate(homDate)} • Senza limiti</p>
+                    </div>
+                  </div>
+
+                  {activeCoach && (
+                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-500">Prenotato da Coach:</span>
+                      <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${getCoachColorClasses(activeCoach.color).solid}`} />
+                        {activeCoach.name}
+                      </span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleBookHom} className="space-y-4">
+                    {/* Sola o in 2 */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                        Partecipanti da prenotare
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setHomPartySize(1)}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            homPartySize === 1
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <User className="w-3.5 h-3.5" />
+                          <span>Viene da sola (1)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHomPartySize(2)}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            homPartySize === 2
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Vengono in 2 (2)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">
+                        {homPartySize === 2 ? 'Nome 1° Ospite *' : 'Nome dell\'Ospite *'}
+                      </label>
+                      <input
+                        list="guest-names-datalist"
+                        type="text"
+                        required
+                        placeholder={homPartySize === 2 ? "Nome e Cognome 1° ospite" : "Nome e Cognome ospite"}
+                        value={homGuestName}
+                        onChange={(e) => setHomGuestName(e.target.value)}
+                        className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 outline-none font-medium"
+                      />
+                    </div>
+
+                    {homPartySize === 2 && (
+                      <div className="animate-fade-in space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-bold text-slate-600">
+                            Nome 2° Ospite / Accompagnatore *
+                          </label>
+                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                            Occupa 2° posto
+                          </span>
+                        </div>
+                        <input
+                          list="guest-names-datalist"
+                          type="text"
+                          required
+                          placeholder="Nome e Cognome 2° ospite"
+                          value={homSecondGuestName}
+                          onChange={(e) => setHomSecondGuestName(e.target.value)}
+                          className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 outline-none font-medium"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">
+                        Note (Opzionale)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Es. Interessato all'attività, ospite di Marco..."
+                        value={homNotes}
+                        onChange={(e) => setHomNotes(e.target.value)}
+                        className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 outline-none font-medium"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={
+                        isBookingHom ||
+                        !homGuestName.trim() ||
+                        (homPartySize === 2 && !homSecondGuestName.trim()) ||
+                        checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'
+                      }
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-3 rounded-xl transition-all shadow-sm shadow-blue-600/20 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isBookingHom ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>{homPartySize === 2 ? 'Conferma Prenotazione (2 Postazioni)' : 'Conferma Prenotazione'}</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Elenco Postazioni Prenotate */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-display font-bold text-slate-800 text-base">
+                          Postazioni Prenotate per Martedì ({homBookings.length})
+                        </h3>
+                        <p className="text-xs text-slate-400">{formatItalianDate(homDate)} • Tutti i posti sono confermati</p>
+                      </div>
+                    </div>
+                    <span className="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Tutti Confermati
+                    </span>
+                  </div>
+
+                  {homBookings.length === 0 ? (
+                    <div className="py-12 text-center space-y-3">
+                      <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                        <Users className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-700">Nessuna postazione ancora prenotata per questo martedì</p>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        Inserisci i tuoi ospiti per la serata HOM per riservare le loro postazioni.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {homBookings.map((b) => {
+                        const bCoach = coaches.find(c => c.id === b.coachId);
+                        const coachStyles = getCoachColorClasses(bCoach?.color || 'blue');
+                        const canManage = b.coachId === currentCoachId || isAdminMode;
+
+                        return (
+                          <div
+                            key={b.id}
+                            className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all space-y-2.5 flex flex-col justify-between"
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                {editingBookingId === b.id ? (
+                                  <div className="flex items-center gap-1.5 w-full">
+                                    <input
+                                      type="text"
+                                      value={editingGuestName}
+                                      onChange={(e) => setEditingGuestName(e.target.value)}
+                                      className="text-xs border border-blue-400 rounded-lg px-2 py-1 flex-1 font-bold outline-none"
+                                      autoFocus
+                                    />
+                                    <button
+                                      onClick={() => handleSaveBookingName(b.id, b.coachId)}
+                                      className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-emerald-50 shrink-0"
+                                      title="Salva"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => { setEditingBookingId(null); setEditingGuestName(''); }}
+                                      className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200/50 shrink-0"
+                                      title="Annulla"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <h4 className="text-sm font-bold text-slate-900">{b.guestName}</h4>
+                                    {canManage && (
+                                      <button
+                                        onClick={() => {
+                                          setEditingBookingId(b.id);
+                                          setEditingGuestName(b.guestName);
+                                        }}
+                                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+                                        title="Modifica nome ospite"
+                                      >
+                                        <Pencil className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
+                                <span className="bg-emerald-100/70 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                                  Confermato ✓
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
+                                  Coach {bCoach?.name || 'Sconosciuto'}
+                                </span>
+                              </div>
+
+                              {b.notes && (
+                                <p className="text-xs text-slate-500 italic bg-white p-2 rounded-xl border border-slate-100">
+                                  &quot;{b.notes}&quot;
+                                </p>
+                              )}
+                            </div>
+
+                            {canManage && editingBookingId !== b.id && (
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  onClick={() => handleDeleteBooking(b.id, b.guestName, b.coachId)}
+                                  className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-xl transition-all cursor-pointer text-xs flex items-center gap-1"
+                                  title="Annulla Postazione"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Cancella</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* RESOCONTO SECTION */}
         {activeTab === 'resoconto' && (
           <AdminReport
             coaches={coaches}
@@ -6008,115 +7311,6 @@ export default function App() {
             renderEarningsTracker={renderEarningsTracker}
           />
         )}
-
-        {/* 6. Advanced Priority Rules Interactive Simulator Visualizer */}
-        <section className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl relative overflow-hidden">
-          {/* Decorative gradients */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
-
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider">GUIDA AL SISTEMA</span>
-                <span className="bg-emerald-950 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-900">Automatico</span>
-              </div>
-              <h3 className="font-display font-extrabold text-xl text-white mt-1">
-                La Coda Equilibrata di Riserva
-              </h3>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700 text-xs text-slate-300">
-              <Scale className="w-4 h-4 text-emerald-400" />
-              <span>Priorità garantita per chi ha meno ospiti attivi</span>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6 text-sm">
-            
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 font-bold text-slate-200">
-                <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">1</span>
-                <span>Quota Prioritaria</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Tutti i coach possono prenotare ospiti. I primi <strong>4 ospiti</strong> inseriti da ciascun coach hanno lo status prioritario di prenotazione, se ci sono ancora delle postazioni libere nel club.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 font-bold text-slate-200">
-                <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">2</span>
-                <span>Attivazione Riserva</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Quando il turno raggiunge le 12 postazioni, i successivi ospiti inseriti finiscono in lista d&apos;attesa. Ma se un coach che ha pochi ospiti ne inserisce uno, questo passa automaticamente davanti!
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 font-bold text-slate-200">
-                <span className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-xs text-emerald-400 font-mono">3</span>
-                <span>Assegnazione Dinamica</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Se elimini un ospite, la coda si riordina da sola. Un ospite in lista d&apos;attesa del coach con meno clientela verrà immediatamente confermato per riempire il posto vuoto!
-              </p>
-            </div>
-
-          </div>
-
-          {/* Demonstration Diagram */}
-          <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block text-center">Simulazione Grafica dell&apos;Assegnazione</span>
-            
-            <div className="flex flex-col md:flex-row items-stretch justify-around gap-4 text-xs">
-              
-              {/* Scenario */}
-              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 space-y-2">
-                <span className="font-bold text-slate-300 block text-center border-b border-slate-800 pb-1.5">Coach Lorenzo (4 ospiti)</span>
-                <div className="space-y-1">
-                  <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
-                    <span className="text-emerald-400 font-bold">1° - 4° Ospite</span>
-                    <span className="text-emerald-500">Confermati ✓</span>
-                  </div>
-                  <div className="flex justify-between bg-amber-950/40 border border-amber-900/50 p-1 px-2 rounded text-[11px]">
-                    <span className="text-amber-400 font-bold">5° Ospite</span>
-                    <span className="text-amber-500">In Riserva ⏱</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Arrow */}
-              <div className="flex items-center justify-center font-bold text-emerald-400 py-2">
-                <span>⚡️</span>
-              </div>
-
-              {/* Action */}
-              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 space-y-2">
-                <span className="font-bold text-slate-300 block text-center border-b border-slate-800 pb-1.5">Coach Anna (2 ospiti)</span>
-                <div className="space-y-1">
-                  <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
-                    <span className="text-emerald-400 font-bold">1° e 2° Ospite</span>
-                    <span className="text-emerald-500">Confermati ✓</span>
-                  </div>
-                  <div className="flex justify-between bg-emerald-950/40 border border-emerald-900/50 p-1 px-2 rounded text-[11px]">
-                    <span className="text-emerald-300 font-bold">3° Ospite (Nuovo)</span>
-                    <span className="text-emerald-400 font-bold">Salta la coda! ✓</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Result */}
-              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex-1 flex flex-col justify-center text-center space-y-1">
-                <span className="font-bold text-emerald-400">Esito Automatico:</span>
-                <p className="text-[11px] text-slate-300 leading-normal">
-                  Il 3° ospite di Anna viene inserito direttamente nel club occupando un posto, mentre il 5° di Lorenzo aspetta in riserva perché Lorenzo ha già 4 ospiti attivi.
-                </p>
-              </div>
-
-            </div>
-          </div>
-        </section>
         </>
         )}
 
@@ -6163,6 +7357,8 @@ export default function App() {
                 onClick={() => {
                   setActiveBookingSlot(null);
                   setNewGuestName('');
+                  setNewSecondGuestName('');
+                  setBookingPartySize(1);
                   setNewGuestNotes('');
                 }}
                 className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1"
@@ -6182,6 +7378,13 @@ export default function App() {
                 <span className="font-semibold text-slate-500">Occupazione Attuale:</span>
                 <span className="font-bold text-slate-800">
                   {activeBookingSlot.confirmedCount} / 12 confermati
+                  {activeBookingSlot.confirmedCount < 12 ? (
+                    <span className="text-emerald-600 font-semibold ml-1">
+                      ({12 - activeBookingSlot.confirmedCount} {12 - activeBookingSlot.confirmedCount === 1 ? 'posto disp.' : 'posti disp.'})
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-semibold ml-1">(In riserva)</span>
+                  )}
                 </span>
               </div>
               {activeCoach && (
@@ -6196,19 +7399,79 @@ export default function App() {
             </div>
 
             <form onSubmit={handleAddBooking} className="space-y-4">
+              {/* Selezione Sola o in 2 */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Nome dell&apos;Ospite *</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                  Partecipanti per questo appuntamento
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBookingPartySize(1)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      bookingPartySize === 1
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Viene da sola (1)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookingPartySize(2)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      bookingPartySize === 2
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Vengono in 2 (2)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">
+                  {bookingPartySize === 2 ? 'Nome 1° Ospite *' : 'Nome dell\'Ospite *'}
+                </label>
                 <input
                   list="guest-names-datalist"
                   type="text"
                   required
                   autoFocus
-                  placeholder="Nome e Cognome ospite"
+                  placeholder={bookingPartySize === 2 ? "Nome e Cognome 1° ospite" : "Nome e Cognome ospite"}
                   value={newGuestName}
                   onChange={(e) => setNewGuestName(e.target.value)}
                   className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none font-medium"
                 />
               </div>
+
+              {bookingPartySize === 2 && (
+                <div className="animate-fade-in space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-600">
+                      Nome 2° Ospite / Accompagnatore *
+                    </label>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Occupa 2° posto nel turno
+                    </span>
+                  </div>
+                  <input
+                    list="guest-names-datalist"
+                    type="text"
+                    required
+                    placeholder="Nome e Cognome 2° ospite"
+                    value={newSecondGuestName}
+                    onChange={(e) => setNewSecondGuestName(e.target.value)}
+                    className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none font-medium"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Verranno inserite 2 prenotazioni nel turno occupando 2 postazioni.
+                  </p>
+                </div>
+              )}
 
               {/* Reactive Payment Warnings */}
               {(() => {
@@ -6281,18 +7544,25 @@ export default function App() {
                   onClick={() => {
                     setActiveBookingSlot(null);
                     setNewGuestName('');
+                    setNewSecondGuestName('');
+                    setBookingPartySize(1);
                     setNewGuestNotes('');
                   }}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-colors"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Annulla
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading || !newGuestName.trim() || checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'}
+                  disabled={
+                    actionLoading || 
+                    !newGuestName.trim() || 
+                    (bookingPartySize === 2 && !newSecondGuestName.trim()) ||
+                    checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'
+                  }
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
-                  Confirmata Prenotazione
+                  {bookingPartySize === 2 ? 'Conferma Prenotazione (2 Postazioni)' : 'Conferma Prenotazione'}
                 </button>
               </div>
             </form>

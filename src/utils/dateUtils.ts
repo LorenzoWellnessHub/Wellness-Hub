@@ -33,6 +33,27 @@ export const parseBookingSlotId = (slotId: string): { type: 'viso' | 'corpo'; da
   return { type, date, time };
 };
 
+export const getTodayDateStr = (): string => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getNextTuesday = (): string => {
+  const now = new Date();
+  const day = now.getDay(); // 0: Dom, 1: Lun, 2: Mar, 3: Mer, 4: Gio, 5: Ven, 6: Sab
+  // Se oggi è martedì viene mostrato il martedì odierno (fino alle 23:59), dal mercoledì scatta il martedì successivo
+  const diff = (2 - day + 7) % 7;
+  const target = new Date();
+  target.setDate(now.getDate() + diff);
+  const year = target.getFullYear();
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(target.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayStr}`;
+};
+
 export const getWeekDates = (mondayStr: string): string[] => {
   if (!mondayStr) return [];
   const mondayDate = new Date(mondayStr);

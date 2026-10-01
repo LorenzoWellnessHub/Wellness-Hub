@@ -36,6 +36,17 @@ interface DbState {
   earnings?: OperatorEarning[];
   cheques?: MonthlyCheque[];
   contacts?: Contact[];
+  shakePartyConfig?: {
+    date: string;
+    time: string;
+    title?: string;
+    notes?: string;
+  };
+  homConfig?: {
+    time: string;
+    title?: string;
+    notes?: string;
+  };
 }
 
 let cachedState: DbState | null = null;
@@ -191,6 +202,12 @@ function normalizeDbState(state: any): DbState {
   }
   if (state.satispayUrl === undefined) {
     state.satispayUrl = "+39 333 1234567";
+  }
+  if (state.shakePartyConfig === undefined) {
+    state.shakePartyConfig = { date: '', time: '20:30', title: 'Shake Party Mensile', notes: '' };
+  }
+  if (state.homConfig === undefined) {
+    state.homConfig = { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' };
   }
 
   return state as DbState;
@@ -367,9 +384,11 @@ function computeBookingsWithStatus(bookings: Booking[]): ComputedBooking[] {
       return x.timestamp - y.timestamp;
     });
 
-    // Mark status: first 12 are 'confermato', rest are 'riserva'
+    // Mark status: for Shake Party and HOM, there are no limits, all are 'confermato'!
+    // For regular slots (viso), first 12 are 'confermato', rest are 'riserva'
     bookingsWithCoachIndex.forEach((b, sortedIndex) => {
-      const status = sortedIndex < 12 ? 'confermato' : 'riserva';
+      const isUnlimited = b.slotId.startsWith('shakeparty_') || b.slotId.startsWith('hom_');
+      const status = isUnlimited ? 'confermato' : (sortedIndex < 12 ? 'confermato' : 'riserva');
       computedBookings.push({
         ...b,
         status,
@@ -392,13 +411,15 @@ app.get('/api/admin/config', (req, res) => {
     iban: db.iban || "IT12X1234512345123456789012",
     ibanHolder: db.ibanHolder || "Lorenzo Wellness",
     paypalUrl: db.paypalUrl || "https://paypal.me/LorenzoWellness",
-    satispayUrl: db.satispayUrl || "+39 333 1234567"
+    satispayUrl: db.satispayUrl || "+39 333 1234567",
+    shakePartyConfig: db.shakePartyConfig || { date: '', time: '20:30', title: 'Shake Party Mensile', notes: '' },
+    homConfig: db.homConfig || { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' }
   });
 });
 
 // POST update admin configuration
 app.post('/api/admin/config', async (req, res) => {
-  const { adminPassword, maxFutureWeeks, regolamento, events, quotaAmount, iban, ibanHolder, paypalUrl, satispayUrl } = req.body;
+  const { adminPassword, maxFutureWeeks, regolamento, events, quotaAmount, iban, ibanHolder, paypalUrl, satispayUrl, shakePartyConfig, homConfig } = req.body;
   const db = readDb();
   
   if (adminPassword !== undefined) {
@@ -438,6 +459,14 @@ app.post('/api/admin/config', async (req, res) => {
 
   if (satispayUrl !== undefined) {
     db.satispayUrl = satispayUrl;
+  }
+
+  if (shakePartyConfig !== undefined) {
+    db.shakePartyConfig = shakePartyConfig;
+  }
+
+  if (homConfig !== undefined) {
+    db.homConfig = homConfig;
   }
 
   await writeDb(db);
@@ -1297,7 +1326,9 @@ app.get('/api/schedule/summary', (req, res) => {
     coaches: db.coaches,
     slotRestrictions: db.slotRestrictions || {},
     maxFutureWeeks: db.maxFutureWeeks !== undefined ? db.maxFutureWeeks : 2,
-    members: db.members || []
+    members: db.members || [],
+    shakePartyConfig: db.shakePartyConfig || { date: '', time: '20:30', title: 'Shake Party Mensile', notes: '' },
+    homConfig: db.homConfig || { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' }
   });
 });
 
@@ -1310,9 +1341,15 @@ app.get('/api/bookings', (req, res) => {
 
 // POST a new booking
 app.post('/api/bookings', async (req, res) => {
-  const { slotId, coachId, guestName, notes } = req.body;
+  const { slotId, coachId, guestName, secondGuestName, partySize, notes } = req.body;
   if (!slotId || !coachId || !guestName) {
     return res.status(400).json({ error: 'Missing booking details' });
+  }
+
+  const requestedPartySize = Number(partySize) === 2 ? 2 : 1;
+  const normalizedSecondName = (secondGuestName || '').trim();
+  if (requestedPartySize === 2 && normalizedSecondName.length === 0) {
+    return res.status(400).json({ error: 'Il nome del secondo ospite non può essere vuoto.' });
   }
 
   const db = readDb();
@@ -1434,23 +1471,51 @@ app.post('/api/bookings', async (req, res) => {
   }
 
   const finalCoachId = (member && member.coachId) ? member.coachId : coachId;
+  const timestamp = Date.now();
 
-  const newBooking: Booking = {
-    id: `booking_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    slotId,
-    coachId: finalCoachId,
-    guestName,
-    notes: notes || '',
-    timestamp: Date.now(),
-  };
+  if (requestedPartySize === 2) {
+    const sName = normalizedSecondName;
+    const b1: Booking = {
+      id: `booking_${timestamp}_1_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId: finalCoachId,
+      guestName: normalizedName,
+      notes: notes ? `${notes} (Insieme a: ${sName})` : `(Insieme a: ${sName})`,
+      timestamp,
+    };
+    const b2: Booking = {
+      id: `booking_${timestamp}_2_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId: finalCoachId,
+      guestName: sName,
+      notes: notes ? `${notes} (Insieme a: ${normalizedName})` : `(Insieme a: ${normalizedName})`,
+      timestamp: timestamp + 1,
+    };
 
-  db.bookings.push(newBooking);
-  await writeDb(db);
+    db.bookings.push(b1, b2);
+    await writeDb(db);
 
-  // Recompute with new booking and return the specific computed booking
-  const allComputed = computeBookingsWithStatus(db.bookings);
-  const created = allComputed.find(b => b.id === newBooking.id);
-  res.json(created || newBooking);
+    const allComputed = computeBookingsWithStatus(db.bookings);
+    const created1 = allComputed.find(b => b.id === b1.id);
+    res.json(created1 || b1);
+  } else {
+    const newBooking: Booking = {
+      id: `booking_${timestamp}_${Math.random().toString(36).substr(2, 5)}`,
+      slotId,
+      coachId: finalCoachId,
+      guestName: normalizedName,
+      notes: notes || '',
+      timestamp,
+    };
+
+    db.bookings.push(newBooking);
+    await writeDb(db);
+
+    // Recompute with new booking and return the specific computed booking
+    const allComputed = computeBookingsWithStatus(db.bookings);
+    const created = allComputed.find(b => b.id === newBooking.id);
+    res.json(created || newBooking);
+  }
 });
 
 // GET public coach info for booking page

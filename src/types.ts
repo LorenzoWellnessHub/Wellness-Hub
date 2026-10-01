@@ -141,4 +141,17 @@ export interface Contact {
   reminderCompletedAt?: number; // Timestamp when completed
 }
 
+export interface ShakePartyConfig {
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  title?: string;
+  notes?: string;
+}
+
+export interface HomConfig {
+  time: string; // HH:MM
+  title?: string;
+  notes?: string;
+}
+
 
