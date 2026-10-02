@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Coach, SlotSummary, ComputedBooking } from '../types';
 import {
   getItalianDayName,
@@ -38,6 +39,7 @@ export const PersonalReport: React.FC<PersonalReportProps> = ({
   const [personalReportMonth, setPersonalReportMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [personalReportSearch, setPersonalReportSearch] = useState<string>('');
   const [personalReportTypeFilter, setPersonalReportTypeFilter] = useState<'all' | 'viso' | 'corpo'>('all');
+  const [isDayAppointmentsExpanded, setIsDayAppointmentsExpanded] = useState<boolean>(false);
 
   const activeCoach = coaches.find((c) => c.id === currentCoachId);
   const coachName = activeCoach ? activeCoach.name : 'Operatore';
@@ -263,7 +265,11 @@ export const PersonalReport: React.FC<PersonalReportProps> = ({
 
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/40 border border-emerald-100 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+            <div 
+              onClick={() => setIsDayAppointmentsExpanded(!isDayAppointmentsExpanded)}
+              className="bg-gradient-to-br from-emerald-50 to-emerald-100/40 border border-emerald-100 rounded-2xl p-4 shadow-3xs flex items-center justify-between cursor-pointer hover:border-emerald-300 hover:shadow-xs transition-all group"
+              title="Clicca per visualizzare o nascondere gli appuntamenti"
+            >
               <div>
                 <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
                   PRENOTAZIONI DEL GIORNO
@@ -271,14 +277,24 @@ export const PersonalReport: React.FC<PersonalReportProps> = ({
                 <span className="font-display font-black text-3xl text-emerald-950 block mt-0.5">
                   {myDayBookings.length}
                 </span>
-                <span className="text-[11px] text-emerald-700 font-semibold block mt-0.5">
-                  {myDayBookings.length === 1 ? '1 ospite in carico' : `${myDayBookings.length} ospiti in carico`}
+                <span className="text-[11px] text-emerald-700 font-semibold block mt-0.5 flex items-center gap-1">
+                  <span>{myDayBookings.length === 1 ? '1 ospite in carico' : `${myDayBookings.length} ospiti in carico`}</span>
+                  <span className="text-[10px] opacity-75 underline ml-1">
+                    {isDayAppointmentsExpanded ? '(nascondi)' : '(visualizza)'}
+                  </span>
                 </span>
               </div>
-              <span className="text-3xl opacity-80">📋</span>
+              <span className="text-3xl opacity-80 group-hover:scale-110 transition-transform">📋</span>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+            <div 
+              onClick={() => {
+                setPersonalReportTypeFilter('viso');
+                setIsDayAppointmentsExpanded(true);
+              }}
+              className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs flex items-center justify-between cursor-pointer hover:border-emerald-200 hover:shadow-xs transition-all group"
+              title="Clicca per filtrare e visualizzare le sedute viso"
+            >
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   TRATTAMENTI VISO
@@ -290,10 +306,17 @@ export const PersonalReport: React.FC<PersonalReportProps> = ({
                   {myDayViso.length === 1 ? '1 seduta viso' : `${myDayViso.length} sedute viso`}
                 </span>
               </div>
-              <span className="text-3xl opacity-80">🌸</span>
+              <span className="text-3xl opacity-80 group-hover:scale-110 transition-transform">🌸</span>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+            <div 
+              onClick={() => {
+                setPersonalReportTypeFilter('corpo');
+                setIsDayAppointmentsExpanded(true);
+              }}
+              className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs flex items-center justify-between cursor-pointer hover:border-blue-200 hover:shadow-xs transition-all group"
+              title="Clicca per filtrare e visualizzare le valutazioni corpo"
+            >
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   VALUTAZIONI CORPOREE
@@ -305,103 +328,151 @@ export const PersonalReport: React.FC<PersonalReportProps> = ({
                   {myDayCorpo.length === 1 ? '1 valutazione corpo' : `${myDayCorpo.length} valutazioni corpo`}
                 </span>
               </div>
-              <span className="text-3xl opacity-80">⚖️</span>
+              <span className="text-3xl opacity-80 group-hover:scale-110 transition-transform">⚖️</span>
             </div>
           </div>
 
-          {/* Filter Pills & Detailed List */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h4 className="font-display font-bold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <span>🕒</span> Elenco Appuntamenti di {formatItalianDate(targetDayStr)}
-              </h4>
-              <div className="flex items-center gap-1.5">
+          {/* Collapsible Appointments Header & List */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs transition-all space-y-3">
+            <div 
+              onClick={() => setIsDayAppointmentsExpanded(!isDayAppointmentsExpanded)}
+              className="flex items-center justify-between flex-wrap gap-2 cursor-pointer select-none group"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-slate-100 group-hover:bg-emerald-50 text-slate-700 group-hover:text-emerald-700 flex items-center justify-center transition-colors">
+                  <span className="text-sm">🕒</span>
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    Elenco Appuntamenti di {formatItalianDate(targetDayStr)}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    {myDayBookings.length === 0
+                      ? 'Nessun appuntamento in carico per questa data'
+                      : `${myDayBookings.length} ${myDayBookings.length === 1 ? 'appuntamento registrato' : 'appuntamenti registrati'} • Clicca per ${isDayAppointmentsExpanded ? 'nascondere' : 'aprire l\'elenco'}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPersonalReportTypeFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    personalReportTypeFilter === 'all'
-                      ? 'bg-slate-800 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDayAppointmentsExpanded(!isDayAppointmentsExpanded);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs ${
+                    isDayAppointmentsExpanded
+                      ? 'bg-slate-800 text-white hover:bg-slate-700'
+                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
                   }`}
                 >
-                  Tutti ({myDayBookings.length})
-                </button>
-                <button
-                  onClick={() => setPersonalReportTypeFilter('viso')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    personalReportTypeFilter === 'viso'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100'
-                  }`}
-                >
-                  🌸 Viso ({myDayViso.length})
-                </button>
-                <button
-                  onClick={() => setPersonalReportTypeFilter('corpo')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    personalReportTypeFilter === 'corpo'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100'
-                  }`}
-                >
-                  ⚖️ Corpo ({myDayCorpo.length})
+                  <span>{isDayAppointmentsExpanded ? 'Nascondi Appuntamenti' : `Visualizza Appuntamenti (${myDayBookings.length})`}</span>
+                  {isDayAppointmentsExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
             </div>
 
-            {displayedDayBookings.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50/70 border border-dashed border-slate-200 rounded-2xl space-y-1">
-                <p className="text-xs font-bold text-slate-600">Nessun appuntamento in carico per questa data.</p>
-                <p className="text-[11px] text-slate-400">
-                  Seleziona un'altra data o prenota un nuovo trattamento dai turni settimanali.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {displayedDayBookings.map((b) => {
-                  const { type, time } = parseBookingSlotId(b.slotId);
-                  const isViso = type === 'viso';
-                  const isReserve = b.status === 'riserva';
-
-                  return (
-                    <div
-                      key={b.id}
-                      className="bg-white border border-slate-200/80 rounded-2xl p-4 flex items-start justify-between gap-3 shadow-3xs hover:border-emerald-300 transition-colors"
+            {/* Expanded Content: Filter Pills & Detailed List */}
+            {isDayAppointmentsExpanded && (
+              <div className="pt-3 border-t border-slate-100 space-y-3 animate-slide-down">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Filtra per tipologia:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setPersonalReportTypeFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        personalReportTypeFilter === 'all'
+                          ? 'bg-slate-800 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
                     >
-                      <div className="flex items-start gap-3 overflow-hidden">
-                        <span className="bg-slate-100 text-slate-800 text-xs font-extrabold px-2.5 py-1 rounded-xl font-mono shrink-0">
-                          ⏱ {time}
-                        </span>
-                        <div className="space-y-1 overflow-hidden text-left">
-                          <div className="flex items-center gap-2">
-                            <h5 className="font-bold text-sm text-slate-900 truncate">{b.guestName}</h5>
-                          </div>
-                          {b.notes && <p className="text-xs text-slate-500 font-medium">📝 {b.notes}</p>}
-                          <div className="flex items-center gap-1.5 pt-0.5">
-                            <span
-                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                                isViso
-                                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
-                                  : 'bg-blue-50 border-blue-100 text-blue-700'
-                              }`}
-                            >
-                              {isViso ? '🌸 Viso' : '⚖️ Corpo'}
+                      Tutti ({myDayBookings.length})
+                    </button>
+                    <button
+                      onClick={() => setPersonalReportTypeFilter('viso')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        personalReportTypeFilter === 'viso'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100'
+                      }`}
+                    >
+                      🌸 Viso ({myDayViso.length})
+                    </button>
+                    <button
+                      onClick={() => setPersonalReportTypeFilter('corpo')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        personalReportTypeFilter === 'corpo'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100'
+                      }`}
+                    >
+                      ⚖️ Corpo ({myDayCorpo.length})
+                    </button>
+                  </div>
+                </div>
+
+                {displayedDayBookings.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50/70 border border-dashed border-slate-200 rounded-2xl space-y-1">
+                    <p className="text-xs font-bold text-slate-600">Nessun appuntamento in carico per questa data.</p>
+                    <p className="text-[11px] text-slate-400">
+                      Seleziona un'altra data o prenota un nuovo trattamento dai turni settimanali.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {displayedDayBookings.map((b) => {
+                      const { type, time } = parseBookingSlotId(b.slotId);
+                      const isViso = type === 'viso';
+                      const isReserve = b.status === 'riserva';
+
+                      return (
+                        <div
+                          key={b.id}
+                          className="bg-slate-50/60 border border-slate-200/80 rounded-2xl p-4 flex items-start justify-between gap-3 shadow-3xs hover:border-emerald-300 transition-colors"
+                        >
+                          <div className="flex items-start gap-3 overflow-hidden">
+                            <span className="bg-slate-100 text-slate-800 text-xs font-extrabold px-2.5 py-1 rounded-xl font-mono shrink-0">
+                              ⏱ {time}
                             </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isReserve
-                                  ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                              }`}
-                            >
-                              {isReserve ? 'In Riserva' : 'Confermato'}
-                            </span>
+                            <div className="space-y-1 overflow-hidden text-left">
+                              <div className="flex items-center gap-2">
+                                <h5 className="font-bold text-sm text-slate-900 truncate">{b.guestName}</h5>
+                              </div>
+                              {b.notes && <p className="text-xs text-slate-500 font-medium">📝 {b.notes}</p>}
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <span
+                                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                    isViso
+                                      ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                                      : 'bg-blue-50 border-blue-100 text-blue-700'
+                                  }`}
+                                >
+                                  {isViso ? '🌸 Viso' : '⚖️ Corpo'}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                    isReserve
+                                      ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  }`}
+                                >
+                                  {isReserve ? 'In Riserva' : 'Confermato'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

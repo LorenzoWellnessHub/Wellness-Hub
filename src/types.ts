@@ -45,6 +45,7 @@ export interface Member {
   coachId?: string; // Associated coach
   registrationMonth?: string; // e.g. "2026-07"
   quotaAmount?: number; // Specific monthly quota for this member
+  firstMonthFree?: boolean; // Se true, il primo mese è omaggio/gratis; se false, la quota va pagata
 }
 
 export interface CoachRegistration {

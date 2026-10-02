@@ -47,6 +47,7 @@ interface DbState {
     title?: string;
     notes?: string;
   };
+  firstMonthFree?: boolean;
 }
 
 let cachedState: DbState | null = null;
@@ -208,6 +209,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (state.homConfig === undefined) {
     state.homConfig = { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' };
+  }
+  if (state.firstMonthFree === undefined) {
+    state.firstMonthFree = true;
   }
 
   return state as DbState;
@@ -413,13 +417,14 @@ app.get('/api/admin/config', (req, res) => {
     paypalUrl: db.paypalUrl || "https://paypal.me/LorenzoWellness",
     satispayUrl: db.satispayUrl || "+39 333 1234567",
     shakePartyConfig: db.shakePartyConfig || { date: '', time: '20:30', title: 'Shake Party Mensile', notes: '' },
-    homConfig: db.homConfig || { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' }
+    homConfig: db.homConfig || { time: '20:30', title: 'HOM - Herbalife Opportunity Meeting', notes: '' },
+    firstMonthFree: db.firstMonthFree !== undefined ? db.firstMonthFree : true
   });
 });
 
 // POST update admin configuration
 app.post('/api/admin/config', async (req, res) => {
-  const { adminPassword, maxFutureWeeks, regolamento, events, quotaAmount, iban, ibanHolder, paypalUrl, satispayUrl, shakePartyConfig, homConfig } = req.body;
+  const { adminPassword, maxFutureWeeks, regolamento, events, quotaAmount, iban, ibanHolder, paypalUrl, satispayUrl, shakePartyConfig, homConfig, firstMonthFree } = req.body;
   const db = readDb();
   
   if (adminPassword !== undefined) {
@@ -469,6 +474,10 @@ app.post('/api/admin/config', async (req, res) => {
     db.homConfig = homConfig;
   }
 
+  if (firstMonthFree !== undefined) {
+    db.firstMonthFree = Boolean(firstMonthFree);
+  }
+
   await writeDb(db);
   res.json({ 
     success: true, 
@@ -480,7 +489,8 @@ app.post('/api/admin/config', async (req, res) => {
     iban: db.iban,
     ibanHolder: db.ibanHolder,
     paypalUrl: db.paypalUrl,
-    satispayUrl: db.satispayUrl
+    satispayUrl: db.satispayUrl,
+    firstMonthFree: db.firstMonthFree
   });
 });
 
@@ -527,15 +537,17 @@ app.post('/api/coaches', async (req, res) => {
   const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 15);
   const nextYM = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
+  const isFree = db.firstMonthFree !== undefined ? db.firstMonthFree : true;
   const newMember: Member = {
     id: `member_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     name: memberName,
     payments: {
-      [currentYM]: true, // default current month to paid
+      [currentYM]: isFree ? true : false,
       [nextYM]: false   // subsequent month set to unpaid
     },
     coachId: coachId,
-    registrationMonth: currentYM
+    registrationMonth: currentYM,
+    firstMonthFree: isFree
   };
 
   db.members.push(newMember);
@@ -671,15 +683,17 @@ app.post('/api/coach-registrations/:id/approve', async (req, res) => {
   const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 15);
   const nextYM = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
+  const isFree = db.firstMonthFree !== undefined ? db.firstMonthFree : true;
   const newMember: Member = {
     id: `member_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     name: memberName,
     payments: {
-      [currentYM]: true, // default current month to paid
+      [currentYM]: isFree ? true : false,
       [nextYM]: false   // subsequent month set to unpaid
     },
     coachId: coachId,
-    registrationMonth: currentYM
+    registrationMonth: currentYM,
+    firstMonthFree: isFree
   };
 
   db.members.push(newMember);
@@ -893,7 +907,7 @@ app.get('/api/members', (req, res) => {
 
 // POST a new member
 app.post('/api/members', async (req, res) => {
-  const { name, coachId, quotaAmount } = req.body;
+  const { name, coachId, quotaAmount, firstMonthFree } = req.body;
   if (!name || name.trim().length === 0) {
     return res.status(400).json({ error: 'Il nome del socio è richiesto.' });
   }
@@ -921,16 +935,19 @@ app.post('/api/members', async (req, res) => {
   const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 15);
   const nextYM = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
+  const isFree = firstMonthFree !== undefined ? Boolean(firstMonthFree) : (db.firstMonthFree !== undefined ? db.firstMonthFree : true);
+
   const newMember: Member = {
     id: `member_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     name: normalized,
     payments: {
-      [currentYM]: true, // default current month to paid on manual creation
+      [currentYM]: isFree ? true : false,
       [nextYM]: false   // subsequent month set to unpaid
     },
     coachId: coachId || undefined,
     registrationMonth: currentYM,
-    quotaAmount: quotaAmount !== undefined ? Number(quotaAmount) : undefined
+    quotaAmount: quotaAmount !== undefined ? Number(quotaAmount) : undefined,
+    firstMonthFree: isFree
   };
 
   db.members.push(newMember);
@@ -941,7 +958,7 @@ app.post('/api/members', async (req, res) => {
 // PUT (edit) a member name or toggle payments
 app.put('/api/members/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, payments, coachId, quotaAmount } = req.body;
+  const { name, payments, coachId, quotaAmount, firstMonthFree } = req.body;
   
   const db = readDb();
   if (!db.members) db.members = [];
@@ -966,6 +983,16 @@ app.put('/api/members/:id', async (req, res) => {
 
   if (quotaAmount !== undefined) {
     db.members[memberIdx].quotaAmount = quotaAmount !== null ? Number(quotaAmount) : undefined;
+  }
+
+  if (firstMonthFree !== undefined) {
+    const isFree = Boolean(firstMonthFree);
+    db.members[memberIdx].firstMonthFree = isFree;
+    const regMonth = db.members[memberIdx].registrationMonth || Object.keys(db.members[memberIdx].payments || {}).sort()[0];
+    if (regMonth && (!payments || payments[regMonth] === undefined)) {
+      if (!db.members[memberIdx].payments) db.members[memberIdx].payments = {};
+      db.members[memberIdx].payments[regMonth] = isFree;
+    }
   }
   
   if (payments !== undefined) {
@@ -1394,6 +1421,14 @@ app.post('/api/bookings', async (req, res) => {
     const mNum = checkDate.getMonth() + 1;
     const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
 
+    const regMonth = member.registrationMonth || Object.keys(member.payments || {}).sort()[0];
+    if (regMonth && ymKey < regMonth) {
+      continue;
+    }
+    if (regMonth && ymKey === regMonth && member.firstMonthFree !== false) {
+      continue;
+    }
+
     const isPaid = member.payments && member.payments[ymKey] !== false; // default to paid if not explicitly false
 
     if (!isPaid) {
@@ -1543,6 +1578,14 @@ app.get('/api/public-bookings/coach/:coachId', (req, res) => {
       const y = checkDate.getFullYear();
       const mNum = checkDate.getMonth() + 1;
       const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
+
+      const regMonth = member.registrationMonth || Object.keys(member.payments || {}).sort()[0];
+      if (regMonth && ymKey < regMonth) {
+        continue;
+      }
+      if (regMonth && ymKey === regMonth && member.firstMonthFree !== false) {
+        continue;
+      }
 
       const isPaid = member.payments && member.payments[ymKey] !== false;
 
@@ -1771,6 +1814,14 @@ app.post('/api/public-bookings', async (req, res) => {
     const mNum = checkDate.getMonth() + 1;
     const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
 
+    const regMonth = member.registrationMonth || Object.keys(member.payments || {}).sort()[0];
+    if (regMonth && ymKey < regMonth) {
+      continue;
+    }
+    if (regMonth && ymKey === regMonth && member.firstMonthFree !== false) {
+      continue;
+    }
+
     const isPaid = member.payments && member.payments[ymKey] !== false;
 
     if (!isPaid) {
@@ -1954,6 +2005,14 @@ app.put('/api/bookings/:id', async (req, res) => {
       const y = checkDate.getFullYear();
       const mNum = checkDate.getMonth() + 1;
       const ymKey = `${y}-${mNum < 10 ? '0' + mNum : mNum}`;
+
+      const regMonth = member.registrationMonth || Object.keys(member.payments || {}).sort()[0];
+      if (regMonth && ymKey < regMonth) {
+        continue;
+      }
+      if (regMonth && ymKey === regMonth && member.firstMonthFree !== false) {
+        continue;
+      }
 
       const isPaid = member.payments && member.payments[ymKey] !== false; // default to paid if not explicitly false
 

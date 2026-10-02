@@ -97,16 +97,19 @@ export default function App() {
   const [newMemberName, setNewMemberName] = useState<string>('');
   const [newMemberCoachId, setNewMemberCoachId] = useState<string>('');
   const [newMemberQuota, setNewMemberQuota] = useState<string>('');
+  const [newMemberFirstMonthFree, setNewMemberFirstMonthFree] = useState<boolean>(true);
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>('');
 
   // Payments configuration & status states
   const [quotaAmount, setQuotaAmount] = useState<number>(30);
+  const [firstMonthFree, setFirstMonthFree] = useState<boolean>(true);
   const [iban, setIban] = useState<string>('IT12X1234512345123456789012');
   const [ibanHolder, setIbanHolder] = useState<string>('Lorenzo Wellness');
   const [paypalUrl, setPaypalUrl] = useState<string>('https://paypal.me/LorenzoWellness');
   const [satispayUrl, setSatispayUrl] = useState<string>('+39 333 1234567');
 
   const [newQuotaAmount, setNewQuotaAmount] = useState<string>('30');
+  const [newFirstMonthFree, setNewFirstMonthFree] = useState<boolean>(true);
   const [newIban, setNewIban] = useState<string>('');
   const [newIbanHolder, setNewIbanHolder] = useState<string>('');
   const [newPaypalUrl, setNewPaypalUrl] = useState<string>('');
@@ -416,6 +419,11 @@ export default function App() {
         if (adminData.quotaAmount !== undefined) {
           setQuotaAmount(adminData.quotaAmount);
           setNewQuotaAmount(String(adminData.quotaAmount));
+        }
+        if (adminData.firstMonthFree !== undefined) {
+          setFirstMonthFree(adminData.firstMonthFree);
+          setNewFirstMonthFree(adminData.firstMonthFree);
+          setNewMemberFirstMonthFree(adminData.firstMonthFree);
         }
         if (adminData.iban !== undefined) {
           setIban(adminData.iban);
@@ -1932,7 +1940,8 @@ export default function App() {
         body: JSON.stringify({ 
           name: newMemberName.trim(),
           coachId: newMemberCoachId || undefined,
-          quotaAmount: newMemberQuota ? Number(newMemberQuota) : undefined
+          quotaAmount: newMemberQuota ? Number(newMemberQuota) : undefined,
+          firstMonthFree: newMemberFirstMonthFree
         })
       });
       if (!response.ok) {
@@ -1944,6 +1953,7 @@ export default function App() {
       setNewMemberName('');
       setNewMemberCoachId('');
       setNewMemberQuota('');
+      setNewMemberFirstMonthFree(firstMonthFree);
       setSuccessMessage(`Socio "${created.name}" aggiunto correttamente.`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
@@ -2020,6 +2030,58 @@ export default function App() {
         return m;
       }));
       setErrorMessage(err.message || 'Errore durante l\'aggiornamento.');
+    }
+  };
+
+  const handleToggleMemberFirstMonthFree = async (member: Member) => {
+    const isCurrentlyFree = member.firstMonthFree !== false;
+    const newStatus = !isCurrentlyFree;
+    const regMonth = getMemberRegistrationMonth(member);
+
+    // Optimistic update
+    setMembers(prev => prev.map(m => {
+      if (m.id === member.id) {
+        return {
+          ...m,
+          firstMonthFree: newStatus,
+          payments: {
+            ...(m.payments || {}),
+            [regMonth]: newStatus ? true : false
+          }
+        };
+      }
+      return m;
+    }));
+
+    setErrorMessage('');
+    try {
+      const response = await fetch(`/api/members/${member.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstMonthFree: newStatus,
+          payments: {
+            [regMonth]: newStatus ? true : false
+          }
+        })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Errore durante l'aggiornamento del primo mese.");
+      }
+      const updatedMember = await response.json();
+      setMembers(prev => prev.map(m => m.id === member.id ? updatedMember : m));
+      setSuccessMessage(
+        newStatus 
+          ? `1° Mese impostato come OMAGGIO (Gratis) per "${member.name}".`
+          : `1° Mese impostato come DA PAGARE per "${member.name}".`
+      );
+      setTimeout(() => setSuccessMessage(''), 3500);
+    } catch (err: any) {
+      // Revert optimistic update
+      setMembers(prev => prev.map(m => m.id === member.id ? member : m));
+      setErrorMessage(err.message || "Errore durante l'aggiornamento.");
+      setTimeout(() => setErrorMessage(''), 4000);
     }
   };
 
@@ -2198,7 +2260,8 @@ export default function App() {
           iban: newIban.trim(),
           ibanHolder: newIbanHolder.trim(),
           paypalUrl: newPaypalUrl.trim(),
-          satispayUrl: newSatispayUrl.trim()
+          satispayUrl: newSatispayUrl.trim(),
+          firstMonthFree: newFirstMonthFree
         })
       });
       if (!response.ok) {
@@ -2212,6 +2275,10 @@ export default function App() {
       }
       if (data.quotaAmount !== undefined) {
         setQuotaAmount(data.quotaAmount);
+      }
+      if (data.firstMonthFree !== undefined) {
+        setFirstMonthFree(data.firstMonthFree);
+        setNewMemberFirstMonthFree(data.firstMonthFree);
       }
       if (data.iban !== undefined) {
         setIban(data.iban);
@@ -3070,6 +3137,9 @@ export default function App() {
 
       const regMonth = getMemberRegistrationMonth(m);
       if (ymKey < regMonth) {
+        continue;
+      }
+      if (ymKey === regMonth && m.firstMonthFree !== false) {
         continue;
       }
 
@@ -4673,6 +4743,17 @@ export default function App() {
                         className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-mono font-semibold text-slate-700 h-[34px]"
                       />
                     </div>
+                    <div className="w-full sm:w-36">
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">1° Mese</label>
+                      <select
+                        value={newMemberFirstMonthFree ? 'free' : 'paid'}
+                        onChange={(e) => setNewMemberFirstMonthFree(e.target.value === 'free')}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700 h-[34px] cursor-pointer"
+                      >
+                        <option value="free">🎁 Gratis (Omaggio)</option>
+                        <option value="paid">💳 Da Pagare</option>
+                      </select>
+                    </div>
                     <button
                       type="submit"
                       disabled={actionLoading || !newMemberName.trim()}
@@ -4749,13 +4830,57 @@ export default function App() {
                                 }
                                 
                                 if (month.ymKey === regMonth) {
-                                  return (
-                                    <td key={month.ymKey} className="p-3 text-center">
-                                      <span className="px-2.5 py-1.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1 shadow-sm select-none">
-                                        🎁 Mese omaggio
-                                      </span>
-                                    </td>
-                                  );
+                                  const isFree = m.firstMonthFree !== false;
+                                  if (isFree) {
+                                    return (
+                                      <td key={month.ymKey} className="p-3 text-center">
+                                        <div className="inline-flex flex-col items-center gap-0.5">
+                                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1 shadow-xs select-none">
+                                            🎁 1° Mese Omaggio
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={actionLoading}
+                                            onClick={() => handleToggleMemberFirstMonthFree(m)}
+                                            className="text-[9px] text-slate-400 hover:text-slate-700 underline cursor-pointer transition-colors"
+                                            title="Clicca per rendere la quota del 1° mese obbligatoria da pagare"
+                                          >
+                                            Rendi da pagare
+                                          </button>
+                                        </div>
+                                      </td>
+                                    );
+                                  } else {
+                                    const isPaid = m.payments && m.payments[month.ymKey] !== false;
+                                    return (
+                                      <td key={month.ymKey} className="p-3 text-center">
+                                        <div className="inline-flex flex-col items-center gap-0.5">
+                                          <button
+                                            type="button"
+                                            disabled={actionLoading}
+                                            onClick={() => handleTogglePayment(m, month.ymKey, isPaid)}
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 shadow-xs ${
+                                              isPaid
+                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
+                                                : 'bg-rose-100 text-rose-800 border border-rose-200 hover:bg-rose-200'
+                                            }`}
+                                            title="1° Mese - Clicca per cambiare stato pagamento"
+                                          >
+                                            {isPaid ? <>✓ 1° M: Pagato</> : <>✗ 1° M: Da Pagare</>}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={actionLoading}
+                                            onClick={() => handleToggleMemberFirstMonthFree(m)}
+                                            className="text-[9px] text-amber-600 hover:text-amber-800 underline cursor-pointer transition-colors"
+                                            title="Clicca per impostare il 1° mese come omaggio/gratis"
+                                          >
+                                            Rendi omaggio
+                                          </button>
+                                        </div>
+                                      </td>
+                                    );
+                                  }
                                 }
 
                                 const isPaid = m.payments && m.payments[month.ymKey] !== false; // default to true
@@ -4846,6 +4971,71 @@ export default function App() {
                   <p className="text-[11px] text-slate-400">
                     Configura la quota mensile predefinita, l'intestatario e l'IBAN per il pagamento dei soci.
                   </p>
+
+                  {/* Scelta Primo Mese per i Nuovi Soci */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>🎁</span> Regola Primo Mese per i Nuovi Soci
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Stabilisci la regola predefinita per chi si registra al club: primo mese gratuito oppure quota da saldare fin da subito.
+                        </div>
+                      </div>
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border self-start sm:self-auto shrink-0 ${
+                        newFirstMonthFree 
+                          ? 'bg-amber-50 text-amber-800 border-amber-300' 
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      }`}>
+                        {newFirstMonthFree ? '🎁 1° Mese Gratis (Omaggio)' : '💳 1° Mese da Pagare'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setNewFirstMonthFree(true)}
+                        className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                          newFirstMonthFree
+                            ? 'bg-amber-50/90 border-amber-400 text-amber-950 ring-2 ring-amber-400/30 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <span className="text-2xl shrink-0 mt-0.5">🎁</span>
+                        <div>
+                          <div className="text-xs font-bold flex items-center gap-1.5">
+                            Primo Mese GRATIS (Omaggio)
+                            {newFirstMonthFree && <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.2 rounded">Attivo</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                            I nuovi soci non pagano la quota per il primo mese di registrazione. Dal mese successivo subentra il pagamento regolare.
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewFirstMonthFree(false)}
+                        className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                          !newFirstMonthFree
+                            ? 'bg-emerald-50/90 border-emerald-400 text-emerald-950 ring-2 ring-emerald-400/30 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <span className="text-2xl shrink-0 mt-0.5">💳</span>
+                        <div>
+                          <div className="text-xs font-bold flex items-center gap-1.5">
+                            Quota da PAGARE dal 1° Mese
+                            {!newFirstMonthFree && <span className="text-[10px] bg-emerald-200 text-emerald-900 font-extrabold px-1.5 py-0.2 rounded">Attivo</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                            La quota mensile (€{newQuotaAmount || quotaAmount}) va versata anche per il 1° mese per poter inserire prenotazioni nel club.
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1">
