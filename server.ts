@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './src/types';
+import { Booking, ComputedBooking, Coach, Slot, SlotSummary, TreatmentType, Member, PaymentRequest, CoachRegistration, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact } from './src/types';
 import { loadDbFromFirestore, saveDbToFirestore, firebaseConfig, dbId } from './src/firebase-db';
 
 const app = express();
@@ -22,6 +22,7 @@ interface DbState {
   disabledSlots?: string[];
   adminPassword?: string;
   members?: Member[];
+  paymentRequests?: PaymentRequest[];
   maxFutureWeeks?: number;
   pendingCoachRegistrations?: CoachRegistration[];
   regolamento?: string;
@@ -137,6 +138,9 @@ function normalizeDbState(state: any): DbState {
   }
   if (!state.members) {
     state.members = [];
+  }
+  if (!state.paymentRequests) {
+    state.paymentRequests = [];
   }
   if (!state.pendingCoachRegistrations) {
     state.pendingCoachRegistrations = [];
@@ -2211,7 +2215,7 @@ app.post('/api/payments/verify-checkout-session', async (req, res) => {
   }
 });
 
-// Directly confirm simulated payment
+// Directly confirm simulated payment (admin manual or legacy)
 app.post('/api/payments/confirm-simulated', async (req, res) => {
   const { memberId, monthKey, paymentMethod } = req.body;
   if (!memberId || !monthKey) {
@@ -2233,6 +2237,167 @@ app.post('/api/payments/confirm-simulated', async (req, res) => {
 
   await writeDb(db);
   res.json({ success: true, member: db.members[memberIdx] });
+});
+
+// --- PAYMENT REQUESTS / BANK TRANSFER VERIFICATION API ---
+// GET all payment requests
+app.get('/api/payment-requests', (req, res) => {
+  const db = readDb();
+  res.json(db.paymentRequests || []);
+});
+
+// POST a new payment request when coach/socio confirms bank transfer
+app.post('/api/payment-requests', async (req, res) => {
+  const { memberId, monthKey, notes, cro } = req.body;
+  if (!memberId || !monthKey) {
+    return res.status(400).json({ error: 'memberId e monthKey sono obbligatori' });
+  }
+
+  const db = readDb();
+  if (!db.paymentRequests) db.paymentRequests = [];
+  if (!db.members) db.members = [];
+  if (!db.coaches) db.coaches = [];
+  if (!db.notifications) db.notifications = [];
+
+  const member = db.members.find(m => m.id === memberId);
+  if (!member) {
+    return res.status(404).json({ error: 'Socio non trovato.' });
+  }
+
+  const coach = member.coachId ? db.coaches.find(c => c.id === member.coachId) : undefined;
+  const quotaAmount = member.quotaAmount !== undefined ? member.quotaAmount : (db.quotaAmount || 30);
+
+  // Parse month label in Italian
+  const [yStr, mStr] = monthKey.split('-');
+  const y = parseInt(yStr, 10);
+  const mNum = parseInt(mStr, 10);
+  const itMonths = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+  const monthLabel = `${itMonths[mNum - 1] || monthKey} ${y || ''}`.trim();
+
+  // Check if there is an existing pending request for this member and monthKey
+  const existingReqIdx = db.paymentRequests.findIndex(pr => pr.memberId === memberId && pr.monthKey === monthKey && pr.status === 'pending');
+
+  let pReq: PaymentRequest;
+  if (existingReqIdx !== -1) {
+    if (notes) db.paymentRequests[existingReqIdx].notes = notes.trim();
+    if (cro) db.paymentRequests[existingReqIdx].cro = cro.trim();
+    db.paymentRequests[existingReqIdx].createdAt = Date.now();
+    pReq = db.paymentRequests[existingReqIdx];
+  } else {
+    pReq = {
+      id: `preq_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      memberId: member.id,
+      memberName: member.name,
+      coachId: member.coachId,
+      coachName: coach ? coach.name : undefined,
+      monthKey,
+      monthLabel,
+      amount: quotaAmount,
+      status: 'pending',
+      createdAt: Date.now(),
+      notes: notes ? notes.trim() : undefined,
+      cro: cro ? cro.trim() : undefined,
+    };
+    db.paymentRequests.unshift(pReq);
+  }
+
+  // Create notification for admin
+  const newNotif: AppNotification = {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    title: `🏦 Bonifico Quota Ricevuto - ${member.name} (${monthLabel})`,
+    message: `Il socio "${member.name}"${coach ? ` (Coach: ${coach.name})` : ''} ha confermato il bonifico di €${quotaAmount} per la quota di ${monthLabel}.${cro ? ` CRO/Rif: ${cro}.` : ''}${notes ? ` Note: ${notes}.` : ''} In attesa di approvazione per lo sblocco.`,
+    senderName: member.name,
+    senderId: member.coachId || member.id,
+    recipientId: 'admin',
+    timestamp: Date.now(),
+    readBy: []
+  };
+  db.notifications.unshift(newNotif);
+
+  await writeDb(db);
+  res.json({ success: true, paymentRequest: pReq });
+});
+
+// Admin approves a payment request and unlocks the member
+app.post('/api/payment-requests/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const db = readDb();
+  if (!db.paymentRequests) db.paymentRequests = [];
+  if (!db.members) db.members = [];
+  if (!db.notifications) db.notifications = [];
+
+  const reqIdx = db.paymentRequests.findIndex(pr => pr.id === id);
+  if (reqIdx === -1) {
+    return res.status(404).json({ error: 'Richiesta di pagamento non trovata.' });
+  }
+
+  const pReq = db.paymentRequests[reqIdx];
+  pReq.status = 'approved';
+  pReq.processedAt = Date.now();
+
+  // Mark member as paid for this month
+  const memberIdx = db.members.findIndex(m => m.id === pReq.memberId);
+  let updatedMember: Member | undefined;
+  if (memberIdx !== -1) {
+    db.members[memberIdx].payments = {
+      ...(db.members[memberIdx].payments || {}),
+      [pReq.monthKey]: true
+    };
+    updatedMember = db.members[memberIdx];
+  }
+
+  // Notify the coach that their quota has been verified and unlocked
+  if (pReq.coachId) {
+    const approvalNotif: AppNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      title: `✅ Bonifico Approvato - Quota ${pReq.monthLabel}`,
+      message: `Il bonifico di €${pReq.amount} per la quota di ${pReq.monthLabel} (${pReq.memberName}) è stato verificato e approvato dall'amministratore. Il profilo è ora sbloccato e le prenotazioni sono attive!`,
+      senderName: 'Amministrazione',
+      senderId: 'admin',
+      recipientId: pReq.coachId,
+      timestamp: Date.now(),
+      readBy: []
+    };
+    db.notifications.unshift(approvalNotif);
+  }
+
+  await writeDb(db);
+  res.json({ success: true, paymentRequest: pReq, member: updatedMember });
+});
+
+// Admin rejects a payment request
+app.post('/api/payment-requests/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const db = readDb();
+  if (!db.paymentRequests) db.paymentRequests = [];
+  if (!db.notifications) db.notifications = [];
+
+  const reqIdx = db.paymentRequests.findIndex(pr => pr.id === id);
+  if (reqIdx === -1) {
+    return res.status(404).json({ error: 'Richiesta di pagamento non trovata.' });
+  }
+
+  const pReq = db.paymentRequests[reqIdx];
+  pReq.status = 'rejected';
+  pReq.processedAt = Date.now();
+
+  if (pReq.coachId) {
+    const rejectNotif: AppNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      title: `⚠️ Verifica Bonifico non Riscontrata - Quota ${pReq.monthLabel}`,
+      message: `Il bonifico per la quota di ${pReq.monthLabel} (${pReq.memberName}) non è stato riscontrato o è stato rifiutato dall'amministrazione.${reason ? ` Motivo: ${reason}` : ' Ti invitiamo a verificare con la tua banca o ricontattare l\'amministratore.'}`,
+      senderName: 'Amministrazione',
+      senderId: 'admin',
+      recipientId: pReq.coachId,
+      timestamp: Date.now(),
+      readBy: []
+    };
+    db.notifications.unshift(rejectNotif);
+  }
+
+  await writeDb(db);
+  res.json({ success: true, paymentRequest: pReq });
 });
 
 // --- OPERATOR EARNINGS API ---

@@ -40,7 +40,7 @@ import {
   ExternalLink,
   Upload
 } from 'lucide-react';
-import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact, ShakePartyConfig, HomConfig } from './types';
+import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, PaymentRequest, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact, ShakePartyConfig, HomConfig } from './types';
 import PublicClientBooking from './components/PublicClientBooking';
 import { PersonalReport } from './components/PersonalReport';
 import { AdminReport } from './components/AdminReport';
@@ -193,7 +193,10 @@ export default function App() {
   const [paymentTargetMonth, setPaymentTargetMonth] = useState<string>('');
   const [paymentTargetMember, setPaymentTargetMember] = useState<Member | null>(null);
   const [paymentInProgress, setPaymentInProgress] = useState<boolean>(false);
-  const [paymentMode, setPaymentMode] = useState<'card' | 'bank_transfer' | 'paypal' | 'satispay'>('card');
+  const [paymentMode, setPaymentMode] = useState<'card' | 'bank_transfer' | 'paypal' | 'satispay'>('bank_transfer');
+  const [paymentNotes, setPaymentNotes] = useState<string>('');
+  const [paymentCro, setPaymentCro] = useState<string>('');
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [stripeCardNumber, setStripeCardNumber] = useState<string>('');
   const [stripeCardExpiry, setStripeCardExpiry] = useState<string>('');
   const [stripeCardCvc, setStripeCardCvc] = useState<string>('');
@@ -202,7 +205,7 @@ export default function App() {
   // Initial user login states
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [hasDismissedPaymentNotice, setHasDismissedPaymentNotice] = useState<boolean>(false);
-  const [alertPaymentChoice, setAlertPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
+  const [alertPaymentChoice, setAlertPaymentChoice] = useState<'bonifico'>('bonifico');
   const [isUtilityPaymentModalOpen, setIsUtilityPaymentModalOpen] = useState<boolean>(false);
   const [utilityPaymentChoice, setUtilityPaymentChoice] = useState<'bonifico' | 'paypal'>('bonifico');
   const [selectedCalendarOverviewDay, setSelectedCalendarOverviewDay] = useState<string>('all');
@@ -468,6 +471,13 @@ export default function App() {
       if (notificationsResponse.ok) {
         const notifData = await notificationsResponse.json();
         setNotifications(notifData || []);
+      }
+
+      // Fetch payment requests (bank transfer verifications)
+      const prResponse = await fetch('/api/payment-requests');
+      if (prResponse.ok) {
+        const prData = await prResponse.json();
+        setPaymentRequests(prData || []);
       }
 
       // Fetch utilities
@@ -2088,10 +2098,9 @@ export default function App() {
   const handleInitiatePayment = (member: Member, monthKey: string) => {
     setPaymentTargetMember(member);
     setPaymentTargetMonth(monthKey);
-    setPaymentMode('bank');
-    setStripeCardNumber('');
-    setStripeCardExpiry('');
-    setStripeCardCvc('');
+    setPaymentMode('bank_transfer');
+    setPaymentNotes('');
+    setPaymentCro('');
     setIsPaymentModalOpen(true);
   };
 
@@ -2102,62 +2111,92 @@ export default function App() {
     setPaymentInProgress(true);
     setErrorMessage('');
     try {
-      if (paymentMode === 'card') {
-        const response = await fetch('/api/payments/create-checkout-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            memberId: paymentTargetMember.id,
-            monthKey: paymentTargetMonth,
-          })
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error || 'Errore durante l\'avvio del pagamento.');
-        }
-
-        const data = await response.json();
-        if (!data.isSimulated && data.url) {
-          // Real Stripe checkout redirect
-          window.location.href = data.url;
-          return;
-        }
-
-        // Simulated card checkout delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-
-      // Call confirm payment API
-      const confirmResponse = await fetch('/api/payments/confirm-simulated', {
+      // Send payment confirmation request to admin for manual check before unlocking
+      const response = await fetch('/api/payment-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           memberId: paymentTargetMember.id,
           monthKey: paymentTargetMonth,
-          paymentMethod: paymentMode
+          notes: paymentNotes.trim(),
+          cro: paymentCro.trim()
         })
       });
 
-      if (!confirmResponse.ok) {
-        const errData = await confirmResponse.json().catch(() => ({}));
-        throw new Error(errData.error || 'Errore durante la conferma del pagamento.');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Errore durante l\'invio della notifica.');
       }
 
-      const confirmData = await confirmResponse.json();
-      
-      // Update members state
-      setMembers(prev => prev.map(m => m.id === paymentTargetMember.id ? confirmData.member : m));
-      
+      const data = await response.json();
+      if (data.paymentRequest) {
+        setPaymentRequests(prev => {
+          const filtered = prev.filter(pr => pr.id !== data.paymentRequest.id);
+          return [data.paymentRequest, ...filtered];
+        });
+      }
+
       const memberQuota = paymentTargetMember.quotaAmount !== undefined ? paymentTargetMember.quotaAmount : quotaAmount;
-      setPaymentSuccessMessage(`Pagamento di €${memberQuota} per ${paymentTargetMonth} registrato correttamente!`);
-      setTimeout(() => setPaymentSuccessMessage(''), 5000);
+      setPaymentSuccessMessage(`Notifica bonifico di €${memberQuota} per ${paymentTargetMonth} inviata all'amministratore! La verifica è in attesa di approvazione prima dello sblocco.`);
+      setTimeout(() => setPaymentSuccessMessage(''), 8000);
       setIsPaymentModalOpen(false);
-      fetchData(); // Reload schedule state
+      await fetchData();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Errore durante il pagamento.');
+      setErrorMessage(err.message || 'Errore durante l\'invio della notifica.');
     } finally {
       setPaymentInProgress(false);
+    }
+  };
+
+  const handleApprovePaymentRequest = async (reqId: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/payment-requests/${reqId}/approve`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Errore durante l\'approvazione del bonifico.');
+      }
+      const data = await res.json();
+      if (data.member) {
+        setMembers(prev => prev.map(m => m.id === data.member.id ? data.member : m));
+      }
+      setPaymentRequests(prev => prev.map(pr => pr.id === reqId ? data.paymentRequest : pr));
+      setSuccessMessage('Bonifico verificato e approvato! Quota registrata come saldata e profilo sbloccato.');
+      setTimeout(() => setSuccessMessage(''), 5000);
+      await fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante l\'approvazione.');
+      setTimeout(() => setErrorMessage(''), 4000);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectPaymentRequest = async (reqId: string) => {
+    const reason = prompt('Motivo del rifiuto o mancato accredito (opzionale):');
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/payment-requests/${reqId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Errore durante l\'operazione.');
+      }
+      const data = await res.json();
+      setPaymentRequests(prev => prev.map(pr => pr.id === reqId ? data.paymentRequest : pr));
+      setSuccessMessage('Segnalazione aggiornata come non riscontrata.');
+      setTimeout(() => setSuccessMessage(''), 4000);
+      await fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore.');
+      setTimeout(() => setErrorMessage(''), 4000);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -3178,10 +3217,12 @@ export default function App() {
         const itMonths = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
         const monthLabel = `${itMonths[mNum - 1]} ${y}`;
 
+        const pendingReq = paymentRequests.find(pr => pr.memberId === m.id && pr.monthKey === ymKey && pr.status === 'pending');
+
         if (isDeadlinePassed) {
-          return { status: 'blocked', monthLabel, member: m, ymKey };
+          return { status: 'blocked' as const, isPendingVerification: !!pendingReq, pendingReq, monthLabel, member: m, ymKey };
         } else if (isReminderZone) {
-          return { status: 'reminder', monthLabel, member: m, ymKey };
+          return { status: 'reminder' as const, isPendingVerification: !!pendingReq, pendingReq, monthLabel, member: m, ymKey };
         }
       }
     }
@@ -4137,98 +4178,64 @@ export default function App() {
             }`}>
               {/* Header: Title and explanation */}
               <div className="flex items-start gap-3">
-                <span className="text-2xl mt-0.5">{isBlocked ? '⚠️' : '🔔'}</span>
+                <span className="text-2xl mt-0.5">{statusResult.isPendingVerification ? '⏳' : isBlocked ? '⚠️' : '🔔'}</span>
                 <div>
                   <h4 className="text-sm font-extrabold uppercase tracking-wide text-slate-900">
-                    {isBlocked ? 'Blocco Attivo: Quota Club Scaduta!' : 'Promemoria: Quota Club in Scadenza!'}
+                    {statusResult.isPendingVerification
+                      ? 'Verifica Bonifico in Corso: Notifica Inviata all\'Admin'
+                      : isBlocked 
+                        ? 'Blocco Attivo: Quota Club Scaduta!' 
+                        : 'Promemoria: Quota Club in Scadenza!'}
                   </h4>
                   <p className="text-xs mt-1 text-slate-600 font-medium leading-relaxed">
-                    Il socio <strong className="font-bold text-slate-900">"{statusResult.member.name}"</strong> (associato a questo profilo coach) {isBlocked ? 'non ha versato la quota' : 'ha la quota in scadenza'} per il mese di <strong className="font-bold text-slate-900">{statusResult.monthLabel}</strong>.
-                    {isBlocked 
-                      ? ' Non puoi inserire nuove prenotazioni fino al completamento del pagamento.' 
-                      : ' Ricorda di regolarizzare entro il giorno 5 del mese.'}
+                    Il socio <strong className="font-bold text-slate-900">"{statusResult.member.name}"</strong> (associato a questo profilo coach) {statusResult.isPendingVerification ? 'ha inviato la notifica del bonifico' : isBlocked ? 'non ha versato la quota' : 'ha la quota in scadenza'} per il mese di <strong className="font-bold text-slate-900">{statusResult.monthLabel}</strong>.
+                    {statusResult.isPendingVerification
+                      ? ' La richiesta è in attesa di controllo contabile da parte dell\'amministratore prima dello sblocco definitivo.'
+                      : isBlocked 
+                        ? ' Non puoi inserire nuove prenotazioni fino alla verifica del pagamento.' 
+                        : ' Ricorda di regolarizzare entro il giorno 5 del mese.'}
                   </p>
                 </div>
               </div>
 
-              {/* Toggle Buttons to select payment method */}
-              <div className="flex gap-2 border-b border-slate-200/50 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setAlertPaymentChoice('bonifico')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    alertPaymentChoice === 'bonifico'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-white/60 hover:bg-white text-slate-600 border border-slate-200'
-                  }`}
-                >
-                  🏦 Bonifico Bancario
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAlertPaymentChoice('paypal')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    alertPaymentChoice === 'paypal'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-white/60 hover:bg-white text-slate-600 border border-slate-200'
-                  }`}
-                >
-                  🔵 Link PayPal
-                </button>
-              </div>
-
-              {/* Dynamic Content based on selection */}
+              {/* Dynamic Content: IBAN Details */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                {alertPaymentChoice === 'bonifico' ? (
-                  <div className="flex-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                        <span className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                        <strong className="text-slate-800 font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                        <span className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">IBAN per Bonifico</span>
-                        <strong className="text-slate-800 font-mono font-bold block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
-                      </div>
+                <div className="flex-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                      <span className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-2 font-medium">
-                      Causale: <strong className="font-semibold text-slate-700">"Quota {statusResult.monthLabel} - {statusResult.member.name}"</strong>
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex-1 space-y-1.5">
-                    <p className="text-xs text-slate-600 font-medium">
-                      Puoi effettuare il pagamento online in modo sicuro e immediato tramite PayPal.
-                    </p>
-                    <div className="inline-flex">
-                      <a
-                        href={paypalUrl || "https://paypal.me/LorenzoWellness"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                      >
-                        <span>🔗</span> Apri Link PayPal
-                      </a>
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                      <span className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">IBAN per Bonifico</span>
+                      <strong className="text-slate-800 font-mono font-bold block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
                     </div>
                   </div>
-                )}
+                  <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                    Causale da inserire: <strong className="font-semibold text-slate-700">"Quota {statusResult.monthLabel} - {statusResult.member.name}"</strong>
+                  </p>
+                </div>
 
-                {/* Right / CTA Section: Button to confirm/pay */}
+                {/* Right / CTA Section: Button to notify admin */}
                 <div className="shrink-0 flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => {
-                      setPaymentMode(alertPaymentChoice === 'bonifico' ? 'bank_transfer' : 'paypal');
+                      setPaymentMode('bank_transfer');
                       handleInitiatePayment(statusResult.member, statusResult.ymKey);
                     }}
                     className={`px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer flex items-center justify-center gap-1.5 ${
-                      isBlocked 
-                        ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/10' 
-                        : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/10'
+                      statusResult.isPendingVerification
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/10'
+                        : isBlocked 
+                          ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/10' 
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10'
                     }`}
                   >
-                    <span>💳</span>
-                    Conferma e Registra (€{statusResult.member.quotaAmount !== undefined ? statusResult.member.quotaAmount : quotaAmount})
+                    <span>{statusResult.isPendingVerification ? '⏳' : '🏦'}</span>
+                    {statusResult.isPendingVerification
+                      ? 'In Attesa Verifica Admin'
+                      : `Conferma Bonifico Effettuato (€${statusResult.member.quotaAmount !== undefined ? statusResult.member.quotaAmount : quotaAmount})`}
                   </button>
                 </div>
               </div>
@@ -4497,13 +4504,18 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setAdminMgmtTab('members')}
-                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer ${
+                className={`pb-2 px-3 border-b-2 transition-all cursor-pointer inline-flex items-center gap-1.5 ${
                   adminMgmtTab === 'members'
                     ? 'border-emerald-600 text-emerald-700 font-extrabold'
                     : 'border-transparent text-slate-400 hover:text-slate-600'
                 }`}
               >
                 💳 Soci & Quote Club ({members.length})
+                {paymentRequests.filter(pr => pr.status === 'pending').length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-extrabold animate-pulse">
+                    {paymentRequests.filter(pr => pr.status === 'pending').length} da verificare
+                  </span>
+                )}
               </button>
               <button
                 type="button"
@@ -4778,6 +4790,86 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Bonifici in attesa di verifica da parte dell'Admin */}
+                {paymentRequests.filter(pr => pr.status === 'pending').length > 0 && (
+                  <div className="bg-amber-50/90 border-2 border-amber-300 p-4 rounded-2xl shadow-xs space-y-3 animate-fade-in">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl animate-bounce">🔔</span>
+                        <div>
+                          <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                            Bonifici da Verificare e Approvare ({paymentRequests.filter(pr => pr.status === 'pending').length})
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-extrabold">In Attesa</span>
+                          </h4>
+                          <p className="text-[11px] text-amber-800 font-medium">
+                            I seguenti soci hanno effettuato il bonifico bancario. Verifica l'accredito sul tuo conto e clicca su <strong>"Approva e Sblocca"</strong> per attivare immediatamente le prenotazioni.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {paymentRequests
+                        .filter(pr => pr.status === 'pending')
+                        .map(pr => (
+                          <div key={pr.id} className="bg-white p-3.5 rounded-xl border border-amber-200 shadow-2xs space-y-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="text-xs font-black text-slate-800 block">{pr.memberName}</span>
+                                <span className="text-[10px] text-slate-500 block">
+                                  Coach: <strong className="text-slate-700">{pr.coachName || 'Non associato'}</strong>
+                                </span>
+                                <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">
+                                  Quota {pr.monthLabel} • <span className="font-mono text-xs font-black">€{pr.amount}</span>
+                                </span>
+                              </div>
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded-md text-[9px] font-bold">
+                                In Attesa
+                              </span>
+                            </div>
+
+                            {(pr.cro || pr.notes) && (
+                              <div className="bg-slate-50 p-2.5 rounded-lg text-[10px] text-slate-600 border border-slate-100 space-y-0.5">
+                                {pr.cro && (
+                                  <div><strong className="text-slate-700">CRO/Rif:</strong> <span className="font-mono font-semibold">{pr.cro}</span></div>
+                                )}
+                                {pr.notes && (
+                                  <div><strong className="text-slate-700">Note socio:</strong> {pr.notes}</div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                              <span className="text-[9px] text-slate-400">
+                                {new Date(pr.createdAt).toLocaleDateString('it-IT')} alle {new Date(pr.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={actionLoading}
+                                  onClick={() => handleRejectPaymentRequest(pr.id)}
+                                  className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-colors cursor-pointer"
+                                  title="Segnala non pervenuto o rifiuta"
+                                >
+                                  Rifiuta
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading}
+                                  onClick={() => handleApprovePaymentRequest(pr.id)}
+                                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  Approva e Sblocca
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Table of Members */}
                 <div className="overflow-x-auto border border-slate-100 rounded-xl max-h-96">
                   <table className="w-full text-left border-collapse text-xs">
@@ -4890,24 +4982,43 @@ export default function App() {
                                 }
 
                                 const isPaid = m.payments && m.payments[month.ymKey] !== false; // default to true
+                                const pendingReq = !isPaid ? paymentRequests.find(pr => pr.memberId === m.id && pr.monthKey === month.ymKey && pr.status === 'pending') : null;
+
                                 return (
                                   <td key={month.ymKey} className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      disabled={actionLoading}
-                                      onClick={() => handleTogglePayment(m, month.ymKey, isPaid)}
-                                      className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
-                                        isPaid
-                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
-                                          : 'bg-rose-100 text-rose-800 border border-rose-200 hover:bg-rose-200'
-                                      }`}
-                                    >
-                                      {isPaid ? (
-                                        <>✓ Pagato</>
-                                      ) : (
-                                        <>✗ Da Pagare</>
-                                      )}
-                                    </button>
+                                    {pendingReq ? (
+                                      <div className="inline-flex flex-col items-center gap-1">
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs animate-pulse">
+                                          ⏳ Bonifico Inviato
+                                        </span>
+                                        <button
+                                          type="button"
+                                          disabled={actionLoading}
+                                          onClick={() => handleApprovePaymentRequest(pendingReq.id)}
+                                          className="px-2.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
+                                          title="Clicca per verificare e approvare subito il bonifico"
+                                        >
+                                          <Check className="w-3 h-3" /> Approva
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={actionLoading}
+                                        onClick={() => handleTogglePayment(m, month.ymKey, isPaid)}
+                                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
+                                          isPaid
+                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
+                                            : 'bg-rose-100 text-rose-800 border border-rose-200 hover:bg-rose-200'
+                                        }`}
+                                      >
+                                        {isPaid ? (
+                                          <>✓ Pagato</>
+                                        ) : (
+                                          <>✗ Da Pagare</>
+                                        )}
+                                      </button>
+                                    )}
                                   </td>
                                 );
                               })}
@@ -5075,29 +5186,6 @@ export default function App() {
                       placeholder="IT..."
                       className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-700"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-500">Link PayPal per Pagamento Quota</label>
-                      <input
-                        type="text"
-                        value={newPaypalUrl}
-                        onChange={(e) => setNewPaypalUrl(e.target.value)}
-                        placeholder="Es: https://paypal.me/LorenzoWellness"
-                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-500">Contatto Satispay (Opzionale)</label>
-                      <input
-                        type="text"
-                        value={newSatispayUrl}
-                        onChange={(e) => setNewSatispayUrl(e.target.value)}
-                        placeholder="Es: +39 333 1234567"
-                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-700"
-                      />
-                    </div>
                   </div>
                 </div>
 
@@ -7664,7 +7752,26 @@ export default function App() {
                 const paymentCheckNew = checkCoachPaymentStatus(currentCoachId);
                 if (!paymentCheckNew) return null;
                 
-                if (paymentCheckNew.status === 'blocked') {
+                if (paymentCheckNew.isPendingVerification) {
+                  return (
+                    <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
+                      <span className="text-sm">⏳</span>
+                      <div className="flex-1">
+                        <p className="font-bold">Verifica Bonifico in Corso</p>
+                        <p className="text-[11px] text-amber-800 font-normal mt-0.5">
+                          Hai inviato la segnalazione del bonifico per la quota di {paymentCheckNew.monthLabel} ("{paymentCheckNew.member.name}"). L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
+                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Dettagli Bonifico Inviato
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else if (paymentCheckNew.status === 'blocked') {
                   return (
                     <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">⚠️</span>
@@ -8313,7 +8420,26 @@ export default function App() {
                 const paymentCheckCorpo = checkCoachPaymentStatus(currentCoachId);
                 if (!paymentCheckCorpo) return null;
                 
-                if (paymentCheckCorpo.status === 'blocked') {
+                if (paymentCheckCorpo.isPendingVerification) {
+                  return (
+                    <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
+                      <span className="text-sm">⏳</span>
+                      <div className="flex-1">
+                        <p className="font-bold">Verifica Bonifico in Corso</p>
+                        <p className="text-[11px] text-amber-800 font-normal mt-0.5">
+                          Hai inviato la segnalazione del bonifico per la quota di {paymentCheckCorpo.monthLabel} ("{paymentCheckCorpo.member.name}"). L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleInitiatePayment(paymentCheckCorpo.member, paymentCheckCorpo.ymKey)}
+                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                        >
+                          Dettagli Bonifico Inviato
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else if (paymentCheckCorpo.status === 'blocked') {
                   return (
                     <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
                       <span className="text-sm">⚠️</span>
@@ -8890,84 +9016,50 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Selector inside popup */}
-              <div className="flex gap-2 border-b border-slate-200/50 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setAlertPaymentChoice('bonifico')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    alertPaymentChoice === 'bonifico'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  🏦 Bonifico
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAlertPaymentChoice('paypal')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    alertPaymentChoice === 'paypal'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  🔵 PayPal
-                </button>
-              </div>
-
-              {alertPaymentChoice === 'bonifico' ? (
-                <div className="bg-slate-50/50 p-4.5 rounded-xl border border-slate-100 space-y-3">
-                  <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                    Coordinate per il Pagamento (Solo Bonifico):
-                  </span>
-                  
-                  <div className="space-y-2">
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
-                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
-                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
-                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
-                    </div>
+              {paymentStatus.isPendingVerification && (
+                <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-250 text-amber-900 text-xs space-y-1 animate-fade-in">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <span>⏳</span> Notifica bonifico già inviata
                   </div>
-
-                  <p className="text-[10px] text-slate-400 font-medium">
-                    Causale da inserire: <strong className="font-semibold text-slate-600">"Quota {paymentStatus.monthLabel} - {paymentStatus.member.name}"</strong>.
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
+                    Hai già inviato la segnalazione del bonifico per la quota di {paymentStatus.monthLabel}. L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
                   </p>
-                </div>
-              ) : (
-                <div className="bg-slate-50/50 p-4.5 rounded-xl border border-slate-100 space-y-3">
-                  <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                    Pagamento via PayPal:
-                  </span>
-                  <p className="text-xs text-slate-600">
-                    Puoi effettuare il pagamento in modo immediato tramite PayPal usando il pulsante qui sotto:
-                  </p>
-                  <a
-                    href={paypalUrl || "https://paypal.me/LorenzoWellness"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <span>🔗</span> Apri Link PayPal
-                  </a>
                 </div>
               )}
+
+              <div className="bg-slate-50/60 p-4.5 rounded-xl border border-slate-150 space-y-3">
+                <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                  Coordinate per il Pagamento (Solo Bonifico Bancario):
+                </span>
+                
+                <div className="space-y-2">
+                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                    <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
+                    <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 font-medium">
+                  Causale da inserire: <strong className="font-semibold text-slate-600">"Quota {paymentStatus.monthLabel} - {paymentStatus.member.name}"</strong>.
+                </p>
+              </div>
 
               <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => {
                     setHasDismissedPaymentNotice(true);
-                    setPaymentMode(alertPaymentChoice === 'bonifico' ? 'bank_transfer' : 'paypal');
+                    setPaymentMode('bank_transfer');
                     handleInitiatePayment(paymentStatus.member, paymentStatus.ymKey);
                   }}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>💳</span> Regolarizza Ora
+                  <span>🏦</span> {paymentStatus.isPendingVerification ? 'Dettagli / Aggiorna Bonifico' : 'Conferma Bonifico Effettuato'}
                 </button>
                 <button
                   type="button"
@@ -9124,57 +9216,69 @@ export default function App() {
                   </div>
                 </div>
 
-              {/* Payment Details (IBAN or PayPal) */}
+              {/* Payment Details (Only IBAN) */}
               <div className="space-y-4">
-                {paymentMode === 'paypal' ? (
-                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-3 text-left">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🔵</span> Pagamento via PayPal
-                    </h4>
-                    
-                    <div className="space-y-2.5 text-xs text-slate-600">
-                      <p className="text-[11px] leading-relaxed">
-                        Fai clic sul pulsante qui sotto per procedere al pagamento immediato e sicuro tramite PayPal:
-                      </p>
-                      
-                      <a
-                        href={paypalUrl || "https://paypal.me/LorenzoWellness"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full text-center block bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition-colors cursor-pointer shadow-sm shadow-blue-600/10"
-                      >
-                        🔗 Paga con PayPal (€{currentTargetQuota})
-                      </a>
+                <div className="bg-slate-50/70 p-4.5 rounded-2xl border border-slate-150 space-y-3 text-left">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🏦</span> Coordinate per il Bonifico Bancario
+                  </h4>
+                  
+                  <div className="space-y-2 text-xs text-slate-600">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                    </div>
 
-                      <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                        Una volta inviato il pagamento tramite PayPal, fai clic su <strong className="font-semibold text-slate-600">"Conferma"</strong> qui sotto per registrare l'avvenuta transazione nel sistema.
-                      </p>
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
+                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Causale Obbligatoria</span>
+                      <strong className="text-slate-800 text-xs font-medium block mt-0.5 select-all">
+                        "Quota {paymentTargetMonth} - {paymentTargetMember.name}"
+                      </strong>
                     </div>
                   </div>
-                ) : (
-                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-3 text-left">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🏦</span> Coordinate per il Bonifico Bancario
-                    </h4>
-                    
-                    <div className="space-y-2.5 text-xs text-slate-600">
-                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs relative">
-                        <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                        <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                      </div>
+                </div>
 
-                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs relative">
-                        <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
-                        <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
-                      </div>
-
-                      <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                        Causale consigliata: <strong className="font-semibold text-slate-600">"Quota {paymentTargetMonth} - {paymentTargetMember.name}"</strong>. 
-                        Una volta effettuato il bonifico, fai clic sul pulsante <strong className="font-semibold text-slate-600">"Conferma"</strong> qui sotto per registrare il pagamento.
-                      </p>
-                    </div>
+                {/* Additional inputs: CRO / TRN and Notes */}
+                <div className="space-y-2.5 text-left bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-600">
+                      Codice CRO / TRN o Estremi Bonifico (Consigliato)
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentCro}
+                      onChange={(e) => setPaymentCro(e.target.value)}
+                      placeholder="Es: CRO 12345678901..."
+                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
                   </div>
-                )}
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-600">
+                      Note per l'Amministratore (Opzionale)
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentNotes}
+                      onChange={(e) => setPaymentNotes(e.target.value)}
+                      placeholder="Es: Bonifico effettuato da conto intestato a..."
+                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Notice that admin must confirm before unlocking */}
+                <div className="bg-amber-50 border border-amber-250 p-3 rounded-xl text-left flex items-start gap-2">
+                  <span className="text-base leading-none mt-0.5">🔔</span>
+                  <p className="text-[11px] text-amber-900 leading-snug">
+                    <strong className="font-bold">Notifica di verifica:</strong> Cliccando su <strong>"Invia Notifica Bonifico all'Admin"</strong>, verrà inviata una segnalazione immediata all'amministratore che verificherà l'accredito contabile prima dello sblocco definitivo.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -9196,12 +9300,12 @@ export default function App() {
                 {paymentInProgress ? (
                   <>
                     <span className="border-2 border-white border-t-transparent rounded-full w-3.5 h-3.5 animate-spin" />
-                    <span>Elaborazione...</span>
+                    <span>Invio in corso...</span>
                   </>
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>{paymentMode === 'card' ? 'Paga Ora' : 'Conferma'}</span>
+                    <span>Invia Notifica all'Admin</span>
                   </>
                 )}
               </button>
@@ -9234,70 +9338,27 @@ export default function App() {
             {/* Modal Body */}
             <div className="p-6 space-y-5 text-left">
               <p className="text-xs text-slate-600 leading-relaxed">
-                Scegli il metodo che preferisci per saldare la quota mensile del club (€{quotaAmount}).
+                Coordinate bancarie ufficiali per il versamento della quota mensile del club (€{quotaAmount}):
               </p>
 
-              {/* Tab Selector */}
-              <div className="flex gap-2 border-b border-slate-200/50 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setUtilityPaymentChoice('bonifico')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    utilityPaymentChoice === 'bonifico'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  🏦 Bonifico Bancario
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUtilityPaymentChoice('paypal')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    utilityPaymentChoice === 'paypal'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  🔵 Link PayPal
-                </button>
+              <div className="space-y-3 animate-fade-in">
+                <div className="bg-slate-50/70 p-4.5 rounded-2xl border border-slate-150 space-y-3">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                    <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico Bancario</span>
+                    <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                  <strong className="font-bold">Causale bonifico:</strong> Inserisci il tuo <em>Nome e Cognome</em> e il <em>Mese di riferimento</em>.
+                  Una volta effettuato il bonifico, comunica la conferma dall'avviso o dalla scheda soci per permettere all'amministrazione di verificare e sbloccare il profilo.
+                </div>
               </div>
-
-              {/* Tabs Content */}
-              {utilityPaymentChoice === 'bonifico' ? (
-                <div className="space-y-3 animate-fade-in">
-                  <div className="bg-slate-50/50 p-4.5 rounded-2xl border border-slate-100 space-y-3">
-                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
-                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-relaxed text-center font-medium">
-                    Inserisci il tuo nome e cognome e il mese di riferimento nella causale del bonifico.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4 animate-fade-in">
-                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-3">
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Puoi effettuare il pagamento online in modo sicuro e immediato tramite PayPal usando il pulsante qui sotto:
-                    </p>
-                    <a
-                      href={paypalUrl || "https://paypal.me/LorenzoWellness"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full text-center block bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition-colors cursor-pointer shadow-sm shadow-blue-600/10"
-                    >
-                      🔗 Apri Link PayPal (€{quotaAmount})
-                    </a>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Modal Footer */}

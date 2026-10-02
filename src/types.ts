@@ -48,6 +48,22 @@ export interface Member {
   firstMonthFree?: boolean; // Se true, il primo mese è omaggio/gratis; se false, la quota va pagata
 }
 
+export interface PaymentRequest {
+  id: string;
+  memberId: string;
+  memberName: string;
+  coachId?: string;
+  coachName?: string;
+  monthKey: string; // e.g. "2026-10"
+  monthLabel: string; // e.g. "Ottobre 2026"
+  amount: number;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number; // timestamp ms
+  notes?: string;
+  cro?: string;
+  processedAt?: number;
+}
+
 export interface CoachRegistration {
   id: string;
   name: string;
