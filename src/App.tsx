@@ -3146,26 +3146,32 @@ export default function App() {
       const isPaid = m.payments && m.payments[ymKey] !== false;
 
       if (!isPaid) {
-        const prevY = mNum === 1 ? y - 1 : y;
-        const prevM = mNum === 1 ? 12 : mNum - 1;
-
-        const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
-        const deadlineDay = Math.min(30, lastDayOfPrevM);
-
         let isDeadlinePassed = false;
         let isReminderZone = false;
 
-        if (today.getFullYear() > prevY) {
+        if (today.getFullYear() > y) {
           isDeadlinePassed = true;
-        } else if (today.getFullYear() === prevY) {
-          if (today.getMonth() + 1 > prevM) {
+        } else if (today.getFullYear() === y) {
+          if (today.getMonth() + 1 > mNum) {
             isDeadlinePassed = true;
-          } else if (today.getMonth() + 1 === prevM) {
-            if (today.getDate() > deadlineDay) {
+          } else if (today.getMonth() + 1 === mNum) {
+            // Mese corrente della quota: scadenza il 5 del mese
+            if (today.getDate() > 5) {
               isDeadlinePassed = true;
-            } else if (today.getDate() >= deadlineDay - 5 && today.getDate() <= deadlineDay) {
+            } else {
+              // Dall'1 al 5 del mese: periodo di tolleranza con promemoria (NON bloccato)
               isReminderZone = true;
             }
+          } else if (today.getMonth() + 1 === mNum - 1) {
+            // Mese precedente: promemoria dal giorno 25
+            if (today.getDate() >= 25) {
+              isReminderZone = true;
+            }
+          }
+        } else if (today.getFullYear() === y - 1 && mNum === 1 && today.getMonth() + 1 === 12) {
+          // Dicembre per Gennaio dell'anno successivo
+          if (today.getDate() >= 25) {
+            isReminderZone = true;
           }
         }
 
@@ -4140,7 +4146,7 @@ export default function App() {
                     Il socio <strong className="font-bold text-slate-900">"{statusResult.member.name}"</strong> (associato a questo profilo coach) {isBlocked ? 'non ha versato la quota' : 'ha la quota in scadenza'} per il mese di <strong className="font-bold text-slate-900">{statusResult.monthLabel}</strong>.
                     {isBlocked 
                       ? ' Non puoi inserire nuove prenotazioni fino al completamento del pagamento.' 
-                      : ' Ricorda di regolarizzare entro il giorno 30.'}
+                      : ' Ricorda di regolarizzare entro il giorno 5 del mese.'}
                   </p>
                 </div>
               </div>
@@ -4768,7 +4774,7 @@ export default function App() {
                 <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-800 flex gap-2">
                   <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold">Regola delle Quote Mensili:</span> Le quote scadono il giorno 30 di ogni mese. I soci che non pagano entro il giorno successivo (il 31 del mese o il 1° del mese successivo) vengono <strong>bloccati automaticamente</strong> e non potranno inserire nuove prenotazioni nel sistema finché non vengono registrati come paganti.
+                    <span className="font-bold">Regola delle Quote Mensili:</span> Le quote possono essere versate entro il <strong className="underline">5 del mese</strong>. Fino al giorno 5 il coach riceve solo un promemoria e può continuare a prenotare liberamente. Dal giorno 6 del mese, in caso di mancato pagamento, scatta il <strong>blocco automatico</strong> dell'inserimento nuove prenotazioni finché la quota non viene registrata come saldata.
                   </div>
                 </div>
 
@@ -7665,7 +7671,7 @@ export default function App() {
                       <div className="flex-1">
                         <p className="font-bold">Socio non in regola con il pagamento!</p>
                         <p className="text-[11px] text-red-700 font-normal mt-0.5">
-                          Il socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckNew.monthLabel} (scaduta il 30). Non è abilitato a inserire prenotazioni nel sistema.
+                          Il socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckNew.monthLabel} (scaduta il 5 del mese). Non è abilitato a inserire prenotazioni nel sistema.
                         </p>
                         <button
                           type="button"
@@ -7684,7 +7690,7 @@ export default function App() {
                       <div className="flex-1">
                         <p className="font-bold">Promemoria quota in scadenza!</p>
                         <p className="text-[11px] text-amber-700 font-normal mt-0.5">
-                          Ricorda al socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckNew.monthLabel} entro il 30.
+                          Ricorda al socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckNew.monthLabel} entro il 5 del mese.
                         </p>
                         <button
                           type="button"
@@ -8314,7 +8320,7 @@ export default function App() {
                       <div className="flex-1">
                         <p className="font-bold">Socio non in regola con il pagamento!</p>
                         <p className="text-[11px] text-red-700 font-normal mt-0.5">
-                          Il socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckCorpo.monthLabel} (scaduta il 30). Non è abilitato a inserire prenotazioni nel sistema.
+                          Il socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckCorpo.monthLabel} (scaduta il 5 del mese). Non è abilitato a inserire prenotazioni nel sistema.
                         </p>
                         <button
                           type="button"
@@ -8333,7 +8339,7 @@ export default function App() {
                       <div className="flex-1">
                         <p className="font-bold">Promemoria quota in scadenza!</p>
                         <p className="text-[11px] text-amber-700 font-normal mt-0.5">
-                          Ricorda al socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckCorpo.monthLabel} entro il 30.
+                          Ricorda al socio "{paymentCheckCorpo.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckCorpo.monthLabel} entro il 5 del mese.
                         </p>
                         <button
                           type="button"
@@ -8880,7 +8886,7 @@ export default function App() {
                 <p className="text-[11px] text-slate-500">
                   {isBlocked 
                     ? 'Le funzionalità di inserimento nuove prenotazioni sono temporaneamente sospese fino al versamento della quota.' 
-                    : 'Ricorda di regolarizzare entro il giorno 30 del mese per evitare limitazioni.'}
+                    : 'Ricorda di regolarizzare entro il giorno 5 del mese per evitare limitazioni.'}
                 </p>
               </div>
 

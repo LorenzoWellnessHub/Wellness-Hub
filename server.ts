@@ -1432,21 +1432,15 @@ app.post('/api/bookings', async (req, res) => {
     const isPaid = member.payments && member.payments[ymKey] !== false; // default to paid if not explicitly false
 
     if (!isPaid) {
-      const prevY = mNum === 1 ? y - 1 : y;
-      const prevM = mNum === 1 ? 12 : mNum - 1;
-
-      const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
-      const deadlineDay = Math.min(30, lastDayOfPrevM);
-
       let isDeadlinePassed = false;
 
-      if (today.getFullYear() > prevY) {
+      if (today.getFullYear() > y) {
         isDeadlinePassed = true;
-      } else if (today.getFullYear() === prevY) {
-        if (today.getMonth() + 1 > prevM) {
+      } else if (today.getFullYear() === y) {
+        if (today.getMonth() + 1 > mNum) {
           isDeadlinePassed = true;
-        } else if (today.getMonth() + 1 === prevM) {
-          if (today.getDate() > deadlineDay) {
+        } else if (today.getMonth() + 1 === mNum) {
+          if (today.getDate() > 5) {
             isDeadlinePassed = true;
           }
         }
@@ -1463,7 +1457,7 @@ app.post('/api/bookings', async (req, res) => {
 
   if (isBlocked) {
     return res.status(403).json({
-      error: `Impossibile completare la prenotazione: il socio "${member.name}" associato al coach non è in regola con il pagamento della quota mensile di ${blockedMonthLabel} (scadenza entro il 30 del mese precedente).`
+      error: `Impossibile completare la prenotazione: il socio "${member.name}" associato al coach non è in regola con il pagamento della quota mensile di ${blockedMonthLabel} (scadenza entro il 5 del mese).`
     });
   }
 
@@ -1590,21 +1584,15 @@ app.get('/api/public-bookings/coach/:coachId', (req, res) => {
       const isPaid = member.payments && member.payments[ymKey] !== false;
 
       if (!isPaid) {
-        const prevY = mNum === 1 ? y - 1 : y;
-        const prevM = mNum === 1 ? 12 : mNum - 1;
-
-        const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
-        const deadlineDay = Math.min(30, lastDayOfPrevM);
-
         let isDeadlinePassed = false;
 
-        if (today.getFullYear() > prevY) {
+        if (today.getFullYear() > y) {
           isDeadlinePassed = true;
-        } else if (today.getFullYear() === prevY) {
-          if (today.getMonth() + 1 > prevM) {
+        } else if (today.getFullYear() === y) {
+          if (today.getMonth() + 1 > mNum) {
             isDeadlinePassed = true;
-          } else if (today.getMonth() + 1 === prevM) {
-            if (today.getDate() > deadlineDay) {
+          } else if (today.getMonth() + 1 === mNum) {
+            if (today.getDate() > 5) {
               isDeadlinePassed = true;
             }
           }
@@ -1825,21 +1813,15 @@ app.post('/api/public-bookings', async (req, res) => {
     const isPaid = member.payments && member.payments[ymKey] !== false;
 
     if (!isPaid) {
-      const prevY = mNum === 1 ? y - 1 : y;
-      const prevM = mNum === 1 ? 12 : mNum - 1;
-
-      const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
-      const deadlineDay = Math.min(30, lastDayOfPrevM);
-
       let isDeadlinePassed = false;
 
-      if (today.getFullYear() > prevY) {
+      if (today.getFullYear() > y) {
         isDeadlinePassed = true;
-      } else if (today.getFullYear() === prevY) {
-        if (today.getMonth() + 1 > prevM) {
+      } else if (today.getFullYear() === y) {
+        if (today.getMonth() + 1 > mNum) {
           isDeadlinePassed = true;
-        } else if (today.getMonth() + 1 === prevM) {
-          if (today.getDate() > deadlineDay) {
+        } else if (today.getMonth() + 1 === mNum) {
+          if (today.getDate() > 5) {
             isDeadlinePassed = true;
           }
         }
@@ -2017,21 +1999,15 @@ app.put('/api/bookings/:id', async (req, res) => {
       const isPaid = member.payments && member.payments[ymKey] !== false; // default to paid if not explicitly false
 
       if (!isPaid) {
-        const prevY = mNum === 1 ? y - 1 : y;
-        const prevM = mNum === 1 ? 12 : mNum - 1;
-
-        const lastDayOfPrevM = new Date(prevY, prevM, 0).getDate();
-        const deadlineDay = Math.min(30, lastDayOfPrevM);
-
         let isDeadlinePassed = false;
 
-        if (today.getFullYear() > prevY) {
+        if (today.getFullYear() > y) {
           isDeadlinePassed = true;
-        } else if (today.getFullYear() === prevY) {
-          if (today.getMonth() + 1 > prevM) {
+        } else if (today.getFullYear() === y) {
+          if (today.getMonth() + 1 > mNum) {
             isDeadlinePassed = true;
-          } else if (today.getMonth() + 1 === prevM) {
-            if (today.getDate() > deadlineDay) {
+          } else if (today.getMonth() + 1 === mNum) {
+            if (today.getDate() > 5) {
               isDeadlinePassed = true;
             }
           }
@@ -2048,7 +2024,7 @@ app.put('/api/bookings/:id', async (req, res) => {
 
     if (isBlocked) {
       return res.status(403).json({
-        error: `Impossibile completare la prenotazione: il socio "${member.name}" associato al coach non è in regola con il pagamento della quota mensile di ${blockedMonthLabel} (scadenza entro il 30 del mese precedente).`
+        error: `Impossibile completare la prenotazione: il socio "${member.name}" associato al coach non è in regola con il pagamento della quota mensile di ${blockedMonthLabel} (scadenza entro il 5 del mese).`
       });
     }
 
