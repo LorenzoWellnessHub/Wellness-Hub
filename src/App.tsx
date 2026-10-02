@@ -44,7 +44,6 @@ import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Memb
 import PublicClientBooking from './components/PublicClientBooking';
 import { PersonalReport } from './components/PersonalReport';
 import { AdminReport } from './components/AdminReport';
-import { CompactWeeklyCalendar } from './components/CompactWeeklyCalendar';
 import {
   getItalianDayName,
   formatItalianDate,
@@ -5279,16 +5278,7 @@ export default function App() {
             {/* Operator earnings tracker under the welcome/active stats report */}
             {renderEarningsTracker(isAdminMode)}
 
-            {/* 2. Unified Clean Weekly Calendar Overview */}
-            <CompactWeeklyCalendar
-              isLoading={isLoading}
-              groupedSlots={groupedSlots}
-              sortedDates={sortedDates}
-              coaches={coaches}
-              getCoachColorClasses={getCoachColorClasses}
-            />
-
-            {/* 3. Guida al Sistema della Coda (Consultabile on-demand per mantenere la dashboard pulita) */}
+            {/* Guida al Sistema della Coda (Consultabile on-demand per mantenere la dashboard pulita) */}
             <div className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-xs transition-all space-y-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
