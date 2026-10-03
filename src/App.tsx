@@ -2104,6 +2104,49 @@ export default function App() {
     setIsPaymentModalOpen(true);
   };
 
+  const handleDirectConfirmBankTransfer = async (member: Member, monthKey: string, croVal?: string, notesVal?: string) => {
+    setPaymentInProgress(true);
+    setErrorMessage('');
+    try {
+      const response = await fetch('/api/payment-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: member.id,
+          monthKey: monthKey,
+          notes: notesVal !== undefined ? notesVal.trim() : (paymentNotes.trim() || undefined),
+          cro: croVal !== undefined ? croVal.trim() : (paymentCro.trim() || undefined)
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Errore durante l\'invio della notifica.');
+      }
+
+      const data = await response.json();
+      if (data.paymentRequest) {
+        setPaymentRequests(prev => {
+          const filtered = prev.filter(pr => pr.id !== data.paymentRequest.id);
+          return [data.paymentRequest, ...filtered];
+        });
+      }
+
+      const memberQuota = member.quotaAmount !== undefined ? member.quotaAmount : quotaAmount;
+      setSuccessMessage(`✅ Notifica bonifico di €${memberQuota} inviata con successo all'amministratore! L'admin verificherà l'accredito contabile per lo sblocco.`);
+      setTimeout(() => setSuccessMessage(''), 8000);
+      setIsPaymentModalOpen(false);
+      setIsUtilityPaymentModalOpen(false);
+      setHasDismissedPaymentNotice(true);
+      await fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Errore durante l\'invio della notifica.');
+      setTimeout(() => setErrorMessage(''), 5000);
+    } finally {
+      setPaymentInProgress(false);
+    }
+  };
+
   const handleProcessPayment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!paymentTargetMember || !paymentTargetMonth) return;
@@ -2118,8 +2161,8 @@ export default function App() {
         body: JSON.stringify({
           memberId: paymentTargetMember.id,
           monthKey: paymentTargetMonth,
-          notes: paymentNotes.trim(),
-          cro: paymentCro.trim()
+          notes: paymentNotes.trim() || undefined,
+          cro: paymentCro.trim() || undefined
         })
       });
 
@@ -2137,9 +2180,11 @@ export default function App() {
       }
 
       const memberQuota = paymentTargetMember.quotaAmount !== undefined ? paymentTargetMember.quotaAmount : quotaAmount;
-      setPaymentSuccessMessage(`Notifica bonifico di €${memberQuota} per ${paymentTargetMonth} inviata all'amministratore! La verifica è in attesa di approvazione prima dello sblocco.`);
-      setTimeout(() => setPaymentSuccessMessage(''), 8000);
+      setSuccessMessage(`✅ Notifica bonifico di €${memberQuota} per ${paymentTargetMonth} inviata all'amministratore! L'admin verificherà l'accredito contabile.`);
+      setTimeout(() => setSuccessMessage(''), 8000);
       setIsPaymentModalOpen(false);
+      setIsUtilityPaymentModalOpen(false);
+      setHasDismissedPaymentNotice(true);
       await fetchData();
     } catch (err: any) {
       setErrorMessage(err.message || 'Errore durante l\'invio della notifica.');
@@ -4216,27 +4261,37 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Right / CTA Section: Button to notify admin */}
-                <div className="shrink-0 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentMode('bank_transfer');
-                      handleInitiatePayment(statusResult.member, statusResult.ymKey);
-                    }}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer flex items-center justify-center gap-1.5 ${
-                      statusResult.isPendingVerification
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/10'
-                        : isBlocked 
-                          ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/10' 
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10'
-                    }`}
-                  >
-                    <span>{statusResult.isPendingVerification ? '⏳' : '🏦'}</span>
-                    {statusResult.isPendingVerification
-                      ? 'In Attesa Verifica Admin'
-                      : `Conferma Bonifico Effettuato (€${statusResult.member.quotaAmount !== undefined ? statusResult.member.quotaAmount : quotaAmount})`}
-                  </button>
+                {/* Right / CTA Section: Button to directly confirm bank transfer and notify admin */}
+                <div className="shrink-0 flex flex-col gap-2 w-full lg:w-auto">
+                  {statusResult.isPendingVerification ? (
+                    <div className="w-full sm:w-auto px-4 py-3 rounded-xl text-xs font-bold bg-amber-100/90 text-amber-900 border border-amber-300 flex items-center justify-center gap-2 shadow-xs">
+                      <span className="text-base">⏳</span>
+                      <span>Notifica Inviata - In Attesa di Approvazione Admin</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={paymentInProgress}
+                      onClick={() => handleDirectConfirmBankTransfer(statusResult.member, statusResult.ymKey)}
+                      className={`w-full sm:w-auto px-5 py-3.5 rounded-xl text-xs sm:text-sm font-black transition-all shadow-md shrink-0 cursor-pointer flex items-center justify-center gap-2 touch-manipulation active:scale-[0.98] ${
+                        isBlocked 
+                          ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/20' 
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                      }`}
+                    >
+                      {paymentInProgress ? (
+                        <>
+                          <span className="border-2 border-white border-t-transparent rounded-full w-4 h-4 animate-spin" />
+                          <span>Invio notifica all'Admin...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-base">🏦</span>
+                          <span>Conferma Bonifico Effettuato (€{statusResult.member.quotaAmount !== undefined ? statusResult.member.quotaAmount : quotaAmount})</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -6150,11 +6205,6 @@ export default function App() {
                                                   <span className="text-slate-400">
                                                     Ospite #{booking.coachIndex + 1}
                                                   </span>
-                                                  {booking.notes && (
-                                                    <span className="text-slate-400 italic truncate max-w-[130px]" title={booking.notes}>
-                                                      &quot;{booking.notes}&quot;
-                                                    </span>
-                                                  )}
                                                 </div>
                                               </div>
                                             </div>
@@ -6261,11 +6311,6 @@ export default function App() {
                                                         Ospite #{booking.coachIndex + 1}
                                                       </span>
                                                     </div>
-                                                    {booking.notes && (
-                                                      <p className="text-[9px] text-slate-400 mt-0.5 italic line-clamp-1" title={booking.notes}>
-                                                        &quot;{booking.notes}&quot;
-                                                      </p>
-                                                    )}
                                                   </div>
  
                                                   {(booking.coachId === currentCoachId || isAdminMode) && editingBookingId !== booking.id && (
@@ -7615,19 +7660,28 @@ export default function App() {
         ))}
       </datalist>
 
-      {/* 7. Modal: BOOK GUEST FORM */}
+      {/* 7. Modal: BOOK GUEST FORM (Skin / Viso) - Mobile & Desktop Responsive */}
       {activeBookingSlot && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-xl border border-slate-200 p-6 space-y-4 animate-scale-up">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-[9999] overflow-y-auto animate-fade-in">
+          <div className="bg-white w-full max-w-lg rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col my-auto max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-scale-up">
             
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-display font-bold text-lg text-slate-900">Nuova Prenotazione</h3>
-                <p className="text-xs text-slate-500">
-                  {activeBookingSlot.treatmentType === 'viso' ? '🌸 Trattamento Viso' : '⚖️ Valutazione Corporea'}
-                </p>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 p-4 sm:p-5 shrink-0 bg-slate-50/90 rounded-t-2xl sm:rounded-t-3xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center text-xl shrink-0">
+                  {activeBookingSlot.treatmentType === 'viso' ? '🌸' : '⚖️'}
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-base sm:text-lg text-slate-900 leading-tight">
+                    {activeBookingSlot.treatmentType === 'viso' ? 'Prenota Skin / Viso' : 'Nuova Prenotazione'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {getItalianDayName(activeBookingSlot.date)} {formatItalianDate(activeBookingSlot.date)} alle ore {activeBookingSlot.time}
+                  </p>
+                </div>
               </div>
               <button 
+                type="button"
                 onClick={() => {
                   setActiveBookingSlot(null);
                   setNewGuestName('');
@@ -7635,203 +7689,185 @@ export default function App() {
                   setBookingPartySize(1);
                   setNewGuestNotes('');
                 }}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1"
+                className="w-9 h-9 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-600 font-bold text-base flex items-center justify-center transition-colors cursor-pointer touch-manipulation active:scale-95"
               >
                 ✕
               </button>
             </div>
 
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="font-semibold text-slate-500">Data e Ora:</span>
-                <span className="font-bold text-slate-800">
-                  {getItalianDayName(activeBookingSlot.date)} {formatItalianDate(activeBookingSlot.date)} alle {activeBookingSlot.time}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold text-slate-500">Occupazione Attuale:</span>
-                <span className="font-bold text-slate-800">
-                  {activeBookingSlot.confirmedCount} / 12 confermati
-                  {activeBookingSlot.confirmedCount < 12 ? (
-                    <span className="text-emerald-600 font-semibold ml-1">
-                      ({12 - activeBookingSlot.confirmedCount} {12 - activeBookingSlot.confirmedCount === 1 ? 'posto disp.' : 'posti disp.'})
-                    </span>
-                  ) : (
-                    <span className="text-amber-600 font-semibold ml-1">(In riserva)</span>
-                  )}
-                </span>
-              </div>
-              {activeCoach && (
-                <div className="flex justify-between border-t border-slate-200/60 pt-1.5 mt-1">
-                  <span className="font-semibold text-slate-500">Prenotato da Coach:</span>
-                  <span className={`font-bold text-slate-800 flex items-center gap-1.5`}>
-                    <span className={`w-2 h-2 rounded-full ${getCoachColorClasses(activeCoach.color).solid}`} />
-                    {activeCoach.name}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={handleAddBooking} className="space-y-4">
-              {/* Selezione Sola o in 2 */}
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">
-                  Partecipanti per questo appuntamento
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBookingPartySize(1)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      bookingPartySize === 1
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span>Viene da sola (1)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBookingPartySize(2)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      bookingPartySize === 2
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>Vengono in 2 (2)</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">
-                  {bookingPartySize === 2 ? 'Nome 1° Ospite *' : 'Nome dell\'Ospite *'}
-                </label>
-                <input
-                  list="guest-names-datalist"
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder={bookingPartySize === 2 ? "Nome e Cognome 1° ospite" : "Nome e Cognome ospite"}
-                  value={newGuestName}
-                  onChange={(e) => setNewGuestName(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none font-medium"
-                />
-              </div>
-
-              {bookingPartySize === 2 && (
-                <div className="animate-fade-in space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-600">
-                      Nome 2° Ospite / Accompagnatore *
-                    </label>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Occupa 2° posto nel turno
+            <form onSubmit={handleAddBooking} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              {/* Scrollable Body - Fully Touch Optimized for iOS Safari & Android */}
+              <div 
+                className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 touch-pan-y overscroll-y-contain pb-6" 
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+              >
+                
+                {/* Slot Summary Info */}
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-xs space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-slate-500">Disponibilità Turno:</span>
+                    <span className="font-bold text-slate-800">
+                      {activeBookingSlot.confirmedCount} / 12 confermati
+                      {activeBookingSlot.confirmedCount < 12 ? (
+                        <span className="text-emerald-700 font-semibold ml-1.5 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          {12 - activeBookingSlot.confirmedCount} {12 - activeBookingSlot.confirmedCount === 1 ? 'posto disp.' : 'posti disp.'}
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-semibold ml-1.5 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">In riserva</span>
+                      )}
                     </span>
                   </div>
+                  {activeCoach && (
+                    <div className="flex justify-between items-center border-t border-slate-200/60 pt-1.5 mt-1">
+                      <span className="font-semibold text-slate-500">Coach che prenota:</span>
+                      <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full ${getCoachColorClasses(activeCoach.color).solid}`} />
+                        {activeCoach.name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Selezione Sola o in 2 */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Quanti ospiti desideri inserire?
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setBookingPartySize(1)}
+                      className={`py-3 px-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer touch-manipulation active:scale-[0.98] ${
+                        bookingPartySize === 1
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <User className="w-4 h-4" />
+                      <span>1 Ospite (1 posto)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBookingPartySize(2)}
+                      className={`py-3 px-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer touch-manipulation active:scale-[0.98] ${
+                        bookingPartySize === 2
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <Users className="w-4 h-4" />
+                      <span>Vengono in 2 (2 posti)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nome 1° Ospite */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    {bookingPartySize === 2 ? 'Nome e Cognome 1° Ospite *' : 'Nome e Cognome Ospite *'}
+                  </label>
                   <input
                     list="guest-names-datalist"
                     type="text"
                     required
-                    placeholder="Nome e Cognome 2° ospite"
-                    value={newSecondGuestName}
-                    onChange={(e) => setNewSecondGuestName(e.target.value)}
-                    className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none font-medium"
+                    placeholder="Es: Maria Rossi"
+                    value={newGuestName}
+                    onChange={(e) => setNewGuestName(e.target.value)}
+                    className="w-full text-base border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-600 outline-none font-medium bg-white shadow-2xs"
                   />
-                  <p className="text-[11px] text-slate-500">
-                    Verranno inserite 2 prenotazioni nel turno occupando 2 postazioni.
+                </div>
+
+                {/* Nome 2° Ospite (se in 2) */}
+                {bookingPartySize === 2 && (
+                  <div className="animate-fade-in space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Nome e Cognome 2° Ospite *
+                      </label>
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Occupa 2° postazione
+                      </span>
+                    </div>
+                    <input
+                      list="guest-names-datalist"
+                      type="text"
+                      required
+                      placeholder="Es: Laura Bianchi"
+                      value={newSecondGuestName}
+                      onChange={(e) => setNewSecondGuestName(e.target.value)}
+                      className="w-full text-base border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-600 outline-none font-medium bg-white shadow-2xs"
+                    />
+                  </div>
+                )}
+
+                {/* Error message inside modal if present */}
+                {errorMessage && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3 rounded-xl animate-fade-in flex items-center gap-2">
+                    <span>⚠️</span>
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
+                {/* Reactive Payment Warnings with easy direct confirm */}
+                {(() => {
+                  const paymentCheckNew = checkCoachPaymentStatus(currentCoachId);
+                  if (!paymentCheckNew) return null;
+                  
+                  if (paymentCheckNew.isPendingVerification) {
+                    return (
+                      <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2.5 animate-fade-in">
+                        <span className="text-xl">⏳</span>
+                        <div className="flex-1">
+                          <p className="font-bold">Notifica Bonifico Inviata all'Admin</p>
+                          <p className="text-[11px] text-amber-800 font-normal mt-0.5 leading-relaxed">
+                            Hai inviato la segnalazione del bonifico per la quota di {paymentCheckNew.monthLabel} ("{paymentCheckNew.member.name}"). L'amministratore sbloccherà il profilo non appena verificato l'accredito.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  } else if (paymentCheckNew.status === 'blocked') {
+                    return (
+                      <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2.5 animate-fade-in">
+                        <span className="text-xl">⚠️</span>
+                        <div className="flex-1">
+                          <p className="font-bold">Socio non in regola con la quota club!</p>
+                          <p className="text-[11px] text-red-700 font-normal mt-0.5 leading-relaxed">
+                            Il socio "{paymentCheckNew.member.name}" non ha versato la quota di {paymentCheckNew.monthLabel}. Per sbloccare le prenotazioni, effettua il bonifico e clicca qui sotto per inviare subito la notifica all'amministratore:
+                          </p>
+                          <button
+                            type="button"
+                            disabled={paymentInProgress}
+                            onClick={() => handleDirectConfirmBankTransfer(paymentCheckNew.member, paymentCheckNew.ymKey)}
+                            className="mt-3 w-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer touch-manipulation disabled:opacity-50"
+                          >
+                            {paymentInProgress ? (
+                              <>
+                                <span className="border-2 border-white border-t-transparent rounded-full w-4 h-4 animate-spin" />
+                                <span>Invio notifica all'admin in corso...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-base">🏦</span>
+                                <span>Conferma Bonifico Effettuato (€{paymentCheckNew.member.quotaAmount !== undefined ? paymentCheckNew.member.quotaAmount : quotaAmount})</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-100/80 text-[11px] text-emerald-800">
+                  <p>
+                    💡 L&apos;ospite verrà automaticamente confermato o inserito in riserva in base alle 12 postazioni disponibili per il turno.
                   </p>
                 </div>
-              )}
-
-              {/* Reactive Payment Warnings */}
-              {(() => {
-                const paymentCheckNew = checkCoachPaymentStatus(currentCoachId);
-                if (!paymentCheckNew) return null;
-                
-                if (paymentCheckNew.isPendingVerification) {
-                  return (
-                    <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
-                      <span className="text-sm">⏳</span>
-                      <div className="flex-1">
-                        <p className="font-bold">Verifica Bonifico in Corso</p>
-                        <p className="text-[11px] text-amber-800 font-normal mt-0.5">
-                          Hai inviato la segnalazione del bonifico per la quota di {paymentCheckNew.monthLabel} ("{paymentCheckNew.member.name}"). L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
-                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                        >
-                          Dettagli Bonifico Inviato
-                        </button>
-                      </div>
-                    </div>
-                  );
-                } else if (paymentCheckNew.status === 'blocked') {
-                  return (
-                    <div className="bg-red-50 border border-red-200 text-red-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
-                      <span className="text-sm">⚠️</span>
-                      <div className="flex-1">
-                        <p className="font-bold">Socio non in regola con il pagamento!</p>
-                        <p className="text-[11px] text-red-700 font-normal mt-0.5">
-                          Il socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) non ha versato la quota di {paymentCheckNew.monthLabel} (scaduta il 5 del mese). Non è abilitato a inserire prenotazioni nel sistema.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
-                          className="mt-2 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                        >
-                          Paga Quota (€{paymentCheckNew.member.quotaAmount !== undefined ? paymentCheckNew.member.quotaAmount : quotaAmount})
-                        </button>
-                      </div>
-                    </div>
-                  );
-                } else if (paymentCheckNew.status === 'reminder') {
-                  return (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold p-3.5 rounded-xl flex items-start gap-2 animate-fade-in">
-                      <span className="text-sm">🔔</span>
-                      <div className="flex-1">
-                        <p className="font-bold">Promemoria quota in scadenza!</p>
-                        <p className="text-[11px] text-amber-700 font-normal mt-0.5">
-                          Ricorda al socio "{paymentCheckNew.member.name}" (associato a questo profilo coach) di saldare la quota di {paymentCheckNew.monthLabel} entro il 5 del mese.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleInitiatePayment(paymentCheckNew.member, paymentCheckNew.ymKey)}
-                          className="mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                        >
-                          Paga Quota (€{paymentCheckNew.member.quotaAmount !== undefined ? paymentCheckNew.member.quotaAmount : quotaAmount})
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Note / Richieste Particolari (Opzionale)</label>
-                <textarea
-                  placeholder="Es. pelle sensibile, prima volta, preferenze particolari..."
-                  value={newGuestNotes}
-                  onChange={(e) => setNewGuestNotes(e.target.value)}
-                  rows={2}
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none resize-none"
-                />
               </div>
 
-              <div className="bg-amber-50 p-3 rounded-xl border border-amber-100/50 flex gap-2 items-start text-[11px] text-amber-800">
-                <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <p>
-                  L&apos;ospite verrà automaticamente confermato o inserito in riserva in base alle altre prenotazioni inserite per questo turno e alle quote attive dei coach.
-                </p>
-              </div>
-
-              <div className="flex gap-2 pt-2">
+              {/* Sticky Footer with actions */}
+              <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-100 shrink-0 flex gap-2.5 rounded-b-2xl sm:rounded-b-3xl">
                 <button
                   type="button"
                   onClick={() => {
@@ -7841,7 +7877,7 @@ export default function App() {
                     setBookingPartySize(1);
                     setNewGuestNotes('');
                   }}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer touch-manipulation min-h-[46px]"
                 >
                   Annulla
                 </button>
@@ -7853,9 +7889,14 @@ export default function App() {
                     (bookingPartySize === 2 && !newSecondGuestName.trim()) ||
                     checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'
                   }
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer touch-manipulation active:scale-[0.98] min-h-[46px]"
                 >
-                  {bookingPartySize === 2 ? 'Conferma Prenotazione (2 Postazioni)' : 'Conferma Prenotazione'}
+                  <Check className="w-4 h-4" />
+                  {checkCoachPaymentStatus(currentCoachId)?.status === 'blocked'
+                    ? 'Quota Bloccata - Segnala Bonifico Sopra'
+                    : bookingPartySize === 2 
+                      ? 'Conferma Prenotazione (2 Postazioni)' 
+                      : 'Conferma Prenotazione'}
                 </button>
               </div>
             </form>
@@ -8985,86 +9026,129 @@ export default function App() {
         
         const isBlocked = paymentStatus.status === 'blocked';
         return (
-          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl border border-slate-250 max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-2xl animate-scale-up text-left">
-              <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border ${
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[999] p-3 sm:p-4 animate-fade-in overflow-y-auto">
+            <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-250 max-w-lg w-full p-5 sm:p-6 shadow-2xl animate-scale-up text-left my-auto max-h-[90vh] flex flex-col">
+              
+              {/* Header */}
+              <div className="flex items-start gap-3.5 pb-3 border-b border-slate-100 shrink-0">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
                   isBlocked ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'
                 }`}>
                   <span className="text-2xl">{isBlocked ? '⚠️' : '🔔'}</span>
                 </div>
-                <div>
-                  <h3 className="font-display font-black text-lg text-slate-900 tracking-tight">
-                    {isBlocked ? 'Accesso Limitato: Quota Scaduta' : 'Scadenza Quota in Arrivo'}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-display font-black text-base sm:text-lg text-slate-900 tracking-tight leading-tight">
+                    {isBlocked ? 'Accesso Limitato: Quota Club Scaduta' : 'Scadenza Quota in Arrivo'}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {isBlocked 
-                      ? 'Rilevato mancato pagamento della quota mensile stabilita per accedere ai servizi del club.' 
+                      ? 'Rilevato mancato versamento della quota mensile stabilita per accedere ai servizi del club.' 
                       : 'Gentile socio, ti ricordiamo la scadenza imminente della quota associativa mensile.'}
                   </p>
                 </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-slate-700 text-xs space-y-1.5 leading-relaxed">
-                <p>
-                  Il socio associato a questo account, <strong className="font-bold text-slate-900">"{paymentStatus.member.name}"</strong>, ha la quota mensile impostata a <strong className="font-bold text-slate-900">€{paymentStatus.member.quotaAmount !== undefined ? paymentStatus.member.quotaAmount : quotaAmount}</strong> per il mese di <strong className="font-bold text-slate-900">{paymentStatus.monthLabel}</strong>.
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {isBlocked 
-                    ? 'Le funzionalità di inserimento nuove prenotazioni sono temporaneamente sospese fino al versamento della quota.' 
-                    : 'Ricorda di regolarizzare entro il giorno 5 del mese per evitare limitazioni.'}
-                </p>
-              </div>
-
-              {paymentStatus.isPendingVerification && (
-                <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-250 text-amber-900 text-xs space-y-1 animate-fade-in">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <span>⏳</span> Notifica bonifico già inviata
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
-                    Hai già inviato la segnalazione del bonifico per la quota di {paymentStatus.monthLabel}. L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
-                  </p>
-                </div>
-              )}
-
-              <div className="bg-slate-50/60 p-4.5 rounded-xl border border-slate-150 space-y-3">
-                <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                  Coordinate per il Pagamento (Solo Bonifico Bancario):
-                </span>
-                
-                <div className="space-y-2">
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
-                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                    <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
-                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN</span>
-                    <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
-                  </div>
-                </div>
-
-                <p className="text-[10px] text-slate-400 font-medium">
-                  Causale da inserire: <strong className="font-semibold text-slate-600">"Quota {paymentStatus.monthLabel} - {paymentStatus.member.name}"</strong>.
-                </p>
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHasDismissedPaymentNotice(true);
-                    setPaymentMode('bank_transfer');
-                    handleInitiatePayment(paymentStatus.member, paymentStatus.ymKey);
-                  }}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <span>🏦</span> {paymentStatus.isPendingVerification ? 'Dettagli / Aggiorna Bonifico' : 'Conferma Bonifico Effettuato'}
-                </button>
                 <button
                   type="button"
                   onClick={() => setHasDismissedPaymentNotice(true)}
-                  className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 rounded-xl transition-all border border-slate-200 cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto py-3 space-y-3.5 touch-pan-y overscroll-y-contain pr-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 text-slate-700 text-xs space-y-1 leading-relaxed">
+                  <p>
+                    Il socio associato a questo account, <strong className="font-bold text-slate-900">"{paymentStatus.member.name}"</strong>, ha la quota mensile impostata a <strong className="font-bold text-slate-900">€{paymentStatus.member.quotaAmount !== undefined ? paymentStatus.member.quotaAmount : quotaAmount}</strong> per il mese di <strong className="font-bold text-slate-900">{paymentStatus.monthLabel}</strong>.
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {isBlocked 
+                      ? 'Le funzionalità di inserimento nuove prenotazioni sono temporaneamente sospese fino alla verifica del pagamento da parte dell\'admin.' 
+                      : 'Ricorda di regolarizzare entro il giorno 5 del mese per evitare limitazioni.'}
+                  </p>
+                </div>
+
+                {paymentStatus.isPendingVerification && (
+                  <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-250 text-amber-900 text-xs space-y-1.5 animate-fade-in">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>⏳</span> Notifica bonifico già inviata all'Amministratore
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
+                      Hai già inviato la segnalazione del bonifico per la quota di {paymentStatus.monthLabel}. L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
+                    </p>
+                  </div>
+                )}
+
+                {errorMessage && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                    <span>⚠️</span>
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
+                <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-150 space-y-2.5">
+                  <span className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                    Coordinate Bancarie (Solo Bonifico):
+                  </span>
+                  
+                  <div className="space-y-2">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
+                      <strong className="text-slate-800 text-xs font-mono font-bold block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Causale da inserire: <strong className="font-semibold text-slate-700">"Quota {paymentStatus.monthLabel} - {paymentStatus.member.name}"</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="shrink-0 pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5">
+                {paymentStatus.isPendingVerification ? (
+                  <div className="flex-1 bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-between gap-1.5 shadow-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span>⏳</span> Notifica Inviata - In Attesa Admin
+                    </span>
+                    <button
+                      type="button"
+                      disabled={paymentInProgress}
+                      onClick={() => handleDirectConfirmBankTransfer(paymentStatus.member, paymentStatus.ymKey)}
+                      className="text-[10px] font-bold text-amber-950 underline hover:text-black cursor-pointer"
+                    >
+                      Reinvia
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={paymentInProgress}
+                    onClick={() => handleDirectConfirmBankTransfer(paymentStatus.member, paymentStatus.ymKey)}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm py-3.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer touch-manipulation active:scale-[0.98] min-h-[46px]"
+                  >
+                    {paymentInProgress ? (
+                      <>
+                        <span className="border-2 border-white border-t-transparent rounded-full w-4 h-4 animate-spin" />
+                        <span>Invio notifica all'Admin...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-base">🏦</span>
+                        <span>Conferma Bonifico Effettuato</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHasDismissedPaymentNotice(true)}
+                  className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 rounded-xl transition-all border border-slate-200 cursor-pointer min-h-[46px]"
                 >
                   {isBlocked ? 'Accedi Comunque' : 'Ignora'}
                 </button>
@@ -9182,10 +9266,10 @@ export default function App() {
       {isPaymentModalOpen && paymentTargetMember && paymentTargetMonth && (() => {
         const currentTargetQuota = paymentTargetMember.quotaAmount !== undefined ? paymentTargetMember.quotaAmount : quotaAmount;
         return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800 my-auto max-h-[90vh] flex flex-col">
               {/* Modal Header */}
-              <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">💳</span>
                   <div>
@@ -9195,14 +9279,14 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setIsPaymentModalOpen(false)}
-                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 space-y-5">
+              <div className="p-5 sm:p-6 space-y-4 flex-1 overflow-y-auto touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
                 {/* Member & Month Info Banner */}
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
                   <div className="text-left space-y-0.5">
@@ -9216,26 +9300,33 @@ export default function App() {
                   </div>
                 </div>
 
+                {errorMessage && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                    <span>⚠️</span>
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
               {/* Payment Details (Only IBAN) */}
-              <div className="space-y-4">
-                <div className="bg-slate-50/70 p-4.5 rounded-2xl border border-slate-150 space-y-3 text-left">
+              <div className="space-y-3.5">
+                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-150 space-y-2.5 text-left">
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <span>🏦</span> Coordinate per il Bonifico Bancario
                   </h4>
                   
                   <div className="space-y-2 text-xs text-slate-600">
-                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
                       <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
                     </div>
 
-                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
-                      <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico</span>
+                      <strong className="text-slate-800 text-xs font-mono font-bold block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
                     </div>
 
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <span className="block text-[9px] text-slate-400 font-sans font-bold uppercase tracking-wider">Causale Obbligatoria</span>
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Causale Obbligatoria</span>
                       <strong className="text-slate-800 text-xs font-medium block mt-0.5 select-all">
                         "Quota {paymentTargetMonth} - {paymentTargetMember.name}"
                       </strong>
@@ -9244,7 +9335,7 @@ export default function App() {
                 </div>
 
                 {/* Additional inputs: CRO / TRN and Notes */}
-                <div className="space-y-2.5 text-left bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="space-y-2 text-left bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-slate-600">
                       Codice CRO / TRN o Estremi Bonifico (Consigliato)
@@ -9283,11 +9374,11 @@ export default function App() {
             </div>
 
             {/* Modal Actions */}
-            <div className="bg-slate-50 p-5 border-t border-slate-100 flex gap-2.5">
+            <div className="bg-slate-50 p-4 sm:p-5 border-t border-slate-100 flex gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsPaymentModalOpen(false)}
-                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-3 rounded-xl transition-colors cursor-pointer"
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-3 rounded-xl transition-colors cursor-pointer min-h-[46px]"
               >
                 Annulla
               </button>
@@ -9295,7 +9386,7 @@ export default function App() {
                 type="button"
                 onClick={() => handleProcessPayment()}
                 disabled={paymentInProgress}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-3 rounded-xl transition-all shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold py-3.5 px-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 touch-manipulation min-h-[46px]"
               >
                 {paymentInProgress ? (
                   <>
@@ -9305,7 +9396,7 @@ export default function App() {
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Invia Notifica all'Admin</span>
+                    <span>Conferma e Notifica Admin</span>
                   </>
                 )}
               </button>
@@ -9315,65 +9406,110 @@ export default function App() {
       )})}
 
       {/* Modal: UTILITY PAYMENT ("Paga Quota") */}
-      {isUtilityPaymentModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800">
-            {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">💳</span>
-                <div>
-                  <h3 className="font-display font-extrabold text-sm tracking-wide">PAGAMENTO QUOTA CLUB</h3>
-                  <p className="text-[10px] text-slate-400 font-mono">Dettagli e Link Sicuri</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsUtilityPaymentModalOpen(false)}
-                className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-5 text-left">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Coordinate bancarie ufficiali per il versamento della quota mensile del club (€{quotaAmount}):
-              </p>
-
-              <div className="space-y-3 animate-fade-in">
-                <div className="bg-slate-50/70 p-4.5 rounded-2xl border border-slate-150 space-y-3">
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
-                    <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico Bancario</span>
-                    <strong className="text-slate-800 text-xs font-mono block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+      {isUtilityPaymentModalOpen && (() => {
+        const coachPaymentStatus = checkCoachPaymentStatus(currentCoachId);
+        const linkedMember = members.find(m => m.coachId === currentCoachId);
+        
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 animate-fade-in overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800 my-auto max-h-[90vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">💳</span>
+                  <div>
+                    <h3 className="font-display font-extrabold text-sm tracking-wide">PAGAMENTO QUOTA CLUB</h3>
+                    <p className="text-[10px] text-slate-400 font-mono">Dettagli e Notifica Bonifico</p>
                   </div>
                 </div>
+                <button
+                  onClick={() => setIsUtilityPaymentModalOpen(false)}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
 
-                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                  <strong className="font-bold">Causale bonifico:</strong> Inserisci il tuo <em>Nome e Cognome</em> e il <em>Mese di riferimento</em>.
-                  Una volta effettuato il bonifico, comunica la conferma dall'avviso o dalla scheda soci per permettere all'amministrazione di verificare e sbloccare il profilo.
+              {/* Modal Body */}
+              <div className="p-5 sm:p-6 space-y-4 text-left flex-1 overflow-y-auto touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Coordinate bancarie ufficiali per il versamento della quota mensile del club (€{linkedMember?.quotaAmount !== undefined ? linkedMember.quotaAmount : quotaAmount}):
+                </p>
+
+                {coachPaymentStatus?.isPendingVerification && (
+                  <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-250 text-amber-900 text-xs space-y-1 animate-fade-in">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>⏳</span> Segnalazione bonifico già inviata
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
+                      Hai già inviato la segnalazione del bonifico per la quota di {coachPaymentStatus.monthLabel}. L'amministratore è stato notificato e sbloccherà il profilo non appena verificato l'accredito contabile.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-3 animate-fade-in">
+                  <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-150 space-y-2.5">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">Intestatario IBAN</span>
+                      <strong className="text-slate-800 text-xs font-semibold block mt-0.5 select-all">{ibanHolder || "Lorenzo Wellness"}</strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <span className="block text-[8px] text-slate-400 font-sans font-bold uppercase tracking-wider">IBAN per Bonifico Bancario</span>
+                      <strong className="text-slate-800 text-xs font-mono font-bold block mt-0.5 select-all break-all">{iban || "IT00A0000000000000000000000"}</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                    <strong className="font-bold">Causale bonifico:</strong> Inserisci il tuo <em>Nome e Cognome</em> e il <em>Mese di riferimento</em>.
+                    Una volta effettuato il bonifico, clicca su <strong>"Conferma Bonifico all'Admin"</strong> qui sotto per inviare immediatamente la notifica all'amministrazione.
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsUtilityPaymentModalOpen(false)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
-              >
-                Chiudi
-              </button>
+              {/* Modal Footer with Actions */}
+              <div className="bg-slate-50 p-4 sm:p-5 border-t border-slate-100 flex gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsUtilityPaymentModalOpen(false)}
+                  className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer min-h-[46px]"
+                >
+                  Chiudi
+                </button>
+                {linkedMember && (
+                  coachPaymentStatus?.isPendingVerification ? (
+                    <div className="flex-1 bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs">
+                      <span>⏳</span> Notifica Inviata all'Admin
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={paymentInProgress}
+                      onClick={() => {
+                        const targetMonthKey = coachPaymentStatus?.ymKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+                        handleDirectConfirmBankTransfer(linkedMember, targetMonthKey);
+                      }}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation min-h-[46px] disabled:opacity-50"
+                    >
+                      {paymentInProgress ? (
+                        <>
+                          <span className="border-2 border-white border-t-transparent rounded-full w-4 h-4 animate-spin" />
+                          <span>Invio in corso...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-base">🏦</span>
+                          <span>Conferma Bonifico all'Admin</span>
+                        </>
+                      )}
+                    </button>
+                  )
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: ANNUAL EARNINGS BREAKDOWN */}
       {isAnnualBreakdownOpen && activeCoach && (() => {
