@@ -3275,6 +3275,70 @@ export default function App() {
     return null;
   };
 
+  // Helper to ensure guests booked together stay strictly adjacent in the list
+  const getOrderedBookingsWithPairs = (list: ComputedBooking[]): ComputedBooking[] => {
+    if (!list || list.length <= 1) return list || [];
+
+    const norm = (s?: string) => (s || '').trim().toLowerCase();
+    const extractInsieme = (notes?: string) => {
+      if (!notes) return '';
+      const match = notes.match(/insieme a:\s*([^)]+)/i);
+      return match ? match[1].trim().toLowerCase() : '';
+    };
+
+    const parties: ComputedBooking[][] = [];
+    const visited = new Set<string>();
+
+    for (const b of list) {
+      if (visited.has(b.id)) continue;
+      visited.add(b.id);
+
+      if (b.groupId) {
+        const companions = list.filter(other => other.id !== b.id && other.groupId === b.groupId && !visited.has(other.id));
+        companions.forEach(c => visited.add(c.id));
+        const party = [b, ...companions].sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0));
+        parties.push(party);
+      } else if (b.pairGuestName) {
+        const normPair = norm(b.pairGuestName);
+        const companion = list.find(other => other.id !== b.id && !visited.has(other.id) && (
+          norm(other.guestName) === normPair ||
+          (other.pairGuestName && norm(other.pairGuestName) === norm(b.guestName))
+        ));
+        if (companion) {
+          visited.add(companion.id);
+          const party = [b, companion].sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0));
+          parties.push(party);
+        } else {
+          parties.push([b]);
+        }
+      } else {
+        const bInsieme = extractInsieme(b.notes);
+        if (bInsieme) {
+          const companion = list.find(other => other.id !== b.id && !visited.has(other.id) && other.coachId === b.coachId && (
+            norm(other.guestName) === bInsieme ||
+            extractInsieme(other.notes) === norm(b.guestName)
+          ));
+          if (companion) {
+            visited.add(companion.id);
+            const party = [b, companion].sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0));
+            parties.push(party);
+            continue;
+          }
+        }
+        parties.push([b]);
+      }
+    }
+
+    // Preserve chronological order of parties so pairs stay contiguous in the list
+    parties.sort((p1, p2) => {
+      const t1 = Math.min(...p1.map(x => x.timestamp || 0));
+      const t2 = Math.min(...p2.map(x => x.timestamp || 0));
+      return t1 - t2;
+    });
+
+    return parties.flat();
+  };
+
   // Group slots by day
   const getGroupedSlots = () => {
     // We only display Trattamento Viso in the main slots calendar grid now
@@ -6114,143 +6178,61 @@ export default function App() {
                                 ) : (
                                   <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                                     {/* 1. Confirmed bookings list mapped to their stations (Postazioni 1-12) */}
-                                    <div className="space-y-1">
-                                      {Array.from({ length: 12 }).map((_, i) => {
-                                        const postNum = i + 1;
-                                        const confirmedList = slot.bookings.filter(b => b.status === 'confermato');
-                                        const booking = confirmedList[i];
-
-                                        if (!booking) {
-                                          return (
-                                            <div 
-                                              key={`post-${postNum}`}
-                                              className="p-1.5 px-2.5 rounded-lg border border-dashed border-slate-200/60 bg-slate-50/20 flex items-center justify-between text-[11px] text-slate-400"
-                                            >
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-mono font-bold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 text-[9px] min-w-[20px] text-center">
-                                                  {postNum}
-                                                </span>
-                                                <span className="italic text-slate-400/80">Postazione Libera</span>
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-
-                                        const guestCoach = coaches.find(c => c.id === booking.coachId);
-                                        const coachStyles = getCoachColorClasses(guestCoach?.color || 'indigo');
-                                         return (
-                                          <div 
-                                            key={booking.id}
-                                            className="p-2 rounded-xl border border-slate-100 bg-white flex items-center justify-between gap-2 shadow-2xs hover:border-slate-200/85 transition-all"
-                                          >
-                                            <div className="flex-1 min-w-0 flex items-center gap-2.5">
-                                              {/* Postazione Number Badge */}
-                                              <span className={`font-mono font-extrabold text-white rounded px-2 py-0.5 text-[10px] min-w-[24px] text-center shrink-0 ${coachStyles.solid}`}>
-                                                {postNum}
-                                              </span>
-                                              
-                                              <div className="flex-1 min-w-0">
-                                                {editingBookingId === booking.id ? (
-                                                  <div className="flex items-center gap-1.5 py-0.5 max-w-sm">
-                                                    <input
-                                                      type="text"
-                                                      value={editingGuestName}
-                                                      onChange={(e) => setEditingGuestName(e.target.value)}
-                                                      className="text-xs font-bold text-slate-800 px-1.5 py-0.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full bg-white"
-                                                      autoFocus
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') handleSaveBookingName(booking.id, booking.coachId);
-                                                        if (e.key === 'Escape') { setEditingBookingId(null); setEditingGuestName(''); }
-                                                      }}
-                                                    />
-                                                    <button
-                                                      onClick={() => handleSaveBookingName(booking.id, booking.coachId)}
-                                                      className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 shrink-0"
-                                                      title="Salva"
-                                                    >
-                                                      <Check className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => { setEditingBookingId(null); setEditingGuestName(''); }}
-                                                      className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 shrink-0"
-                                                      title="Annulla"
-                                                    >
-                                                      <X className="w-3.5 h-3.5" />
-                                                    </button>
-                                                  </div>
-                                                ) : (
-                                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className="text-xs font-bold text-slate-800 truncate block">
-                                                      {booking.guestName}
-                                                    </span>
-                                                    {(booking.coachId === currentCoachId || isAdminMode) && (
-                                                      <button
-                                                        onClick={() => {
-                                                          setEditingBookingId(booking.id);
-                                                          setEditingGuestName(booking.guestName);
-                                                        }}
-                                                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
-                                                        title="Modifica nome ospite"
-                                                      >
-                                                        <Pencil className="w-2.5 h-2.5" />
-                                                      </button>
-                                                    )}
-                                                  </div>
-                                                )}
- 
-                                                <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500 flex-wrap">
-                                                  <span className={`px-1.5 py-0.2 rounded-xs font-semibold border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
-                                                    Coach {guestCoach?.name || 'Sconosciuto'}
-                                                  </span>
-                                                  <span className="text-slate-400">
-                                                    Ospite #{booking.coachIndex + 1}
-                                                  </span>
-                                                </div>
-                                              </div>
-                                            </div>
- 
-                                            {/* Deletion icon */}
-                                            {(booking.coachId === currentCoachId || isAdminMode) && editingBookingId !== booking.id && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeleteBooking(booking.id, booking.guestName, booking.coachId)}
-                                                className="text-slate-400 hover:text-red-500 p-1 rounded-md hover:bg-slate-100 transition-colors shrink-0"
-                                                title="Elimina Prenotazione"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-
-                                    {/* 2. Waitlist/Reserves section if any */}
                                     {(() => {
-                                      const reserves = slot.bookings.filter(b => b.status === 'riserva');
-
-                                      if (reserves.length === 0) return null;
+                                      const rawConfirmed = slot.bookings.filter(b => b.status === 'confermato');
+                                      const confirmedList = getOrderedBookingsWithPairs(rawConfirmed);
 
                                       return (
-                                        <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-[9px] font-extrabold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 uppercase tracking-wider inline-block">
-                                              ⚠️ LISTA D&apos;ATTESA (RISERVE)
-                                            </span>
-                                            <span className="text-[9px] font-bold text-amber-600">
-                                              {reserves.length} in attesa
-                                            </span>
-                                          </div>
-                                          <div className="space-y-1">
-                                            {reserves.map((booking) => {
-                                              const guestCoach = coaches.find(c => c.id === booking.coachId);
-                                              const coachStyles = getCoachColorClasses(guestCoach?.color || 'indigo');
+                                        <div className="space-y-1">
+                                          {Array.from({ length: 12 }).map((_, i) => {
+                                            const postNum = i + 1;
+                                            const booking = confirmedList[i];
 
+                                            if (!booking) {
                                               return (
                                                 <div 
-                                                  key={booking.id}
-                                                  className="p-2 rounded-xl border border-amber-100/50 bg-amber-50/10 flex items-center justify-between gap-2 transition-all"
+                                                  key={`post-${postNum}`}
+                                                  className="p-1.5 px-2.5 rounded-lg border border-dashed border-slate-200/60 bg-slate-50/20 flex items-center justify-between text-[11px] text-slate-400"
                                                 >
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="font-mono font-bold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 text-[9px] min-w-[20px] text-center">
+                                                      {postNum}
+                                                    </span>
+                                                    <span className="italic text-slate-400/80">Postazione Libera</span>
+                                                  </div>
+                                                </div>
+                                              );
+                                            }
+
+                                            const guestCoach = coaches.find(c => c.id === booking.coachId);
+                                            const coachStyles = getCoachColorClasses(guestCoach?.color || 'indigo');
+
+                                            // Determine companion guest if booked together
+                                            const companion = confirmedList.find(other => 
+                                              other.id !== booking.id && (
+                                                (booking.groupId && other.groupId === booking.groupId) ||
+                                                (booking.pairGuestName && other.guestName.trim().toLowerCase() === booking.pairGuestName.trim().toLowerCase()) ||
+                                                (other.pairGuestName && booking.guestName.trim().toLowerCase() === other.pairGuestName.trim().toLowerCase()) ||
+                                                (Boolean(booking.notes?.toLowerCase().includes('insieme a') && booking.notes?.toLowerCase().includes(other.guestName.toLowerCase())))
+                                              )
+                                            );
+                                            const companionName = booking.pairGuestName || companion?.guestName;
+
+                                            return (
+                                              <div 
+                                                key={booking.id}
+                                                className={`p-2 rounded-xl border bg-white flex items-center justify-between gap-2 shadow-2xs hover:border-slate-200/85 transition-all ${
+                                                  companionName 
+                                                    ? 'border-l-[3.5px] border-l-emerald-500 border-slate-200/90 bg-emerald-50/15' 
+                                                    : 'border-slate-100'
+                                                }`}
+                                              >
+                                                <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                                                  {/* Postazione Number Badge */}
+                                                  <span className={`font-mono font-extrabold text-white rounded px-2 py-0.5 text-[10px] min-w-[24px] text-center shrink-0 ${coachStyles.solid}`}>
+                                                    {postNum}
+                                                  </span>
+                                                  
                                                   <div className="flex-1 min-w-0">
                                                     {editingBookingId === booking.id ? (
                                                       <div className="flex items-center gap-1.5 py-0.5 max-w-sm">
@@ -6261,12 +6243,12 @@ export default function App() {
                                                           className="text-xs font-bold text-slate-800 px-1.5 py-0.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full bg-white"
                                                           autoFocus
                                                           onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') handleSaveBookingName(booking.id);
+                                                            if (e.key === 'Enter') handleSaveBookingName(booking.id, booking.coachId);
                                                             if (e.key === 'Escape') { setEditingBookingId(null); setEditingGuestName(''); }
                                                           }}
                                                         />
                                                         <button
-                                                          onClick={() => handleSaveBookingName(booking.id)}
+                                                          onClick={() => handleSaveBookingName(booking.id, booking.coachId)}
                                                           className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 shrink-0"
                                                           title="Salva"
                                                         >
@@ -6282,13 +6264,19 @@ export default function App() {
                                                       </div>
                                                     ) : (
                                                       <div className="flex items-center gap-1.5 flex-wrap">
-                                                        <span className="text-xs font-bold text-amber-900 truncate block">
+                                                        <span className="text-xs font-bold text-slate-800 truncate block">
                                                           {booking.guestName}
                                                         </span>
-                                                        <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-bold px-1 rounded-full inline-flex items-center gap-0.5">
-                                                          <Clock className="w-2.5 h-2.5" /> Riserva
-                                                         </span>
-                                                         {(booking.coachId === currentCoachId || isAdminMode) && (
+                                                        {companionName && (
+                                                          <span 
+                                                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-100/90 text-emerald-800 border border-emerald-300/80 font-bold text-[9px] shadow-3xs"
+                                                            title={`Prenotato insieme a ${companionName}`}
+                                                          >
+                                                            <Users className="w-2.5 h-2.5 text-emerald-700 shrink-0" />
+                                                            <span>Insieme a {companionName}</span>
+                                                          </span>
+                                                        )}
+                                                        {(booking.coachId === currentCoachId || isAdminMode) && (
                                                           <button
                                                             onClick={() => {
                                                               setEditingBookingId(booking.id);
@@ -6302,9 +6290,9 @@ export default function App() {
                                                         )}
                                                       </div>
                                                     )}
- 
-                                                    <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500">
-                                                      <span className={`px-1 rounded-xs font-semibold border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
+
+                                                    <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500 flex-wrap">
+                                                      <span className={`px-1.5 py-0.2 rounded-xs font-semibold border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
                                                         Coach {guestCoach?.name || 'Sconosciuto'}
                                                       </span>
                                                       <span className="text-slate-400">
@@ -6312,24 +6300,154 @@ export default function App() {
                                                       </span>
                                                     </div>
                                                   </div>
- 
-                                                  {(booking.coachId === currentCoachId || isAdminMode) && editingBookingId !== booking.id && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleDeleteBooking(booking.id, booking.guestName, booking.coachId)}
-                                                      className="text-slate-400 hover:text-red-500 p-1 rounded-md hover:bg-slate-100 transition-colors shrink-0"
-                                                      title="Elimina Prenotazione"
-                                                    >
-                                                      <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                  )}
                                                 </div>
-                                              );
-                                            })}
-                                          </div>
+
+                                                {/* Deletion icon */}
+                                                {(booking.coachId === currentCoachId || isAdminMode) && editingBookingId !== booking.id && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteBooking(booking.id, booking.guestName, booking.coachId)}
+                                                    className="text-slate-400 hover:text-red-500 p-1 rounded-md hover:bg-slate-100 transition-colors shrink-0"
+                                                    title="Elimina Prenotazione"
+                                                  >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       );
                                     })()}
+
+                                    {/* 2. Waitlist/Reserves section if any */}
+                              {(() => {
+                                const rawReserves = slot.bookings.filter(b => b.status === 'riserva');
+                                const reserves = getOrderedBookingsWithPairs(rawReserves);
+
+                                if (reserves.length === 0) return null;
+
+                                return (
+                                  <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[9px] font-extrabold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 uppercase tracking-wider inline-block">
+                                        ⚠️ LISTA D&apos;ATTESA (RISERVE)
+                                      </span>
+                                      <span className="text-[9px] font-bold text-amber-600">
+                                        {reserves.length} in attesa
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1">
+                                      {reserves.map((booking) => {
+                                        const guestCoach = coaches.find(c => c.id === booking.coachId);
+                                        const coachStyles = getCoachColorClasses(guestCoach?.color || 'indigo');
+
+                                        const companion = reserves.find(other => 
+                                          other.id !== booking.id && (
+                                            (booking.groupId && other.groupId === booking.groupId) ||
+                                            (booking.pairGuestName && other.guestName.trim().toLowerCase() === booking.pairGuestName.trim().toLowerCase()) ||
+                                            (other.pairGuestName && booking.guestName.trim().toLowerCase() === other.pairGuestName.trim().toLowerCase())
+                                          )
+                                        );
+                                        const companionName = booking.pairGuestName || companion?.guestName;
+
+                                        return (
+                                          <div 
+                                            key={booking.id}
+                                            className={`p-2 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                                              companionName 
+                                                ? 'border-l-[3.5px] border-l-amber-500 border-amber-200 bg-amber-50/25' 
+                                                : 'border-amber-100/50 bg-amber-50/10'
+                                            }`}
+                                          >
+                                            <div className="flex-1 min-w-0">
+                                              {editingBookingId === booking.id ? (
+                                                <div className="flex items-center gap-1.5 py-0.5 max-w-sm">
+                                                  <input
+                                                    type="text"
+                                                    value={editingGuestName}
+                                                    onChange={(e) => setEditingGuestName(e.target.value)}
+                                                    className="text-xs font-bold text-slate-800 px-1.5 py-0.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full bg-white"
+                                                    autoFocus
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') handleSaveBookingName(booking.id);
+                                                      if (e.key === 'Escape') { setEditingBookingId(null); setEditingGuestName(''); }
+                                                    }}
+                                                  />
+                                                  <button
+                                                    onClick={() => handleSaveBookingName(booking.id)}
+                                                    className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 shrink-0"
+                                                    title="Salva"
+                                                  >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button
+                                                    onClick={() => { setEditingBookingId(null); setEditingGuestName(''); }}
+                                                    className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 shrink-0"
+                                                    title="Annulla"
+                                                  >
+                                                    <X className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="text-xs font-bold text-amber-900 truncate block">
+                                                    {booking.guestName}
+                                                  </span>
+                                                  <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-bold px-1 rounded-full inline-flex items-center gap-0.5">
+                                                    <Clock className="w-2.5 h-2.5" /> Riserva
+                                                  </span>
+                                                  {companionName && (
+                                                    <span 
+                                                      className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[9px]"
+                                                      title={`In riserva insieme a ${companionName}`}
+                                                    >
+                                                      <Users className="w-2.5 h-2.5 text-amber-700 shrink-0" />
+                                                      <span>Insieme a {companionName}</span>
+                                                    </span>
+                                                  )}
+                                                  {(booking.coachId === currentCoachId || isAdminMode) && (
+                                                    <button
+                                                      onClick={() => {
+                                                        setEditingBookingId(booking.id);
+                                                        setEditingGuestName(booking.guestName);
+                                                      }}
+                                                      className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+                                                      title="Modifica nome ospite"
+                                                    >
+                                                      <Pencil className="w-2.5 h-2.5" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              )}
+
+                                              <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500">
+                                                <span className={`px-1 rounded-xs font-semibold border ${coachStyles.bg} ${coachStyles.text} ${coachStyles.border}`}>
+                                                  Coach {guestCoach?.name || 'Sconosciuto'}
+                                                </span>
+                                                <span className="text-slate-400">
+                                                  Ospite #{booking.coachIndex + 1}
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            {(booking.coachId === currentCoachId || isAdminMode) && editingBookingId !== booking.id && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteBooking(booking.id, booking.guestName, booking.coachId)}
+                                                className="text-slate-400 hover:text-red-500 p-1 rounded-md hover:bg-slate-100 transition-colors shrink-0"
+                                                title="Elimina Prenotazione"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                                   </div>
                                 )}
                               </div>

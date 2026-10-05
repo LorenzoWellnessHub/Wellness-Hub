@@ -1,44 +1,46 @@
 {
-  "paymentRequests": [
-    {
-      "id": "preq_1791023758886_d5j8gs",
-      "memberId": "member_1783758911586_frbs7",
-      "memberName": "Test Coach",
-      "coachId": "coach_1783758911586",
-      "coachName": "Test Coach",
-      "monthKey": "2026-08",
-      "monthLabel": "Agosto 2026",
-      "amount": 30,
-      "status": "pending",
-      "createdAt": 1791023758886
-    },
-    {
-      "monthKey": "2026-10",
-      "cro": "CRO99887766",
-      "memberName": "Sandro",
-      "monthLabel": "Ottobre 2026",
-      "notes": "Bonifico effettuato online",
-      "status": "approved",
-      "coachId": "coach_1783759478774",
-      "createdAt": 1790920467266,
-      "coachName": "Sandro",
-      "memberId": "member_1783759478774_q134g",
-      "amount": 30,
-      "id": "preq_1790920467266_lkusdb",
-      "processedAt": 1790920473189
-    }
-  ],
   "disabledSlots": [
     "viso_2026-09-28_10:00"
   ],
+  "paymentRequests": [
+    {
+      "memberId": "member_1783758911586_frbs7",
+      "coachId": "coach_1783758911586",
+      "monthLabel": "Agosto 2026",
+      "monthKey": "2026-08",
+      "coachName": "Test Coach",
+      "createdAt": 1791023758886,
+      "memberName": "Test Coach",
+      "amount": 30,
+      "status": "pending",
+      "id": "preq_1791023758886_d5j8gs"
+    },
+    {
+      "processedAt": 1790920473189,
+      "monthLabel": "Ottobre 2026",
+      "coachId": "coach_1783759478774",
+      "monthKey": "2026-10",
+      "notes": "Bonifico effettuato online",
+      "memberId": "member_1783759478774_q134g",
+      "createdAt": 1790920467266,
+      "status": "approved",
+      "amount": 30,
+      "coachName": "Sandro",
+      "memberName": "Sandro",
+      "id": "preq_1790920467266_lkusdb",
+      "cro": "CRO99887766"
+    }
+  ],
+  "cheques": [],
+  "iban": "IT12X1234512345123456789012",
   "coaches": [
     {
-      "acceptedRules": true,
-      "id": "coach_1",
       "color": "emerald",
+      "id": "coach_1",
       "name": "Lorenzo",
       "pin": "1234",
-      "isAdmin": true
+      "isAdmin": true,
+      "acceptedRules": true
     },
     {
       "name": "Anna",
@@ -46,269 +48,195 @@
       "id": "coach_2"
     },
     {
-      "name": "Marco",
       "id": "coach_3",
-      "color": "amber"
+      "color": "amber",
+      "name": "Marco"
     },
     {
-      "id": "coach_4",
+      "color": "blue",
       "name": "Sofia",
-      "color": "blue"
+      "id": "coach_4"
     },
     {
-      "isAdmin": false,
       "id": "coach_1783758911586",
+      "color": "emerald",
       "name": "Test Coach",
-      "pin": "",
-      "color": "emerald"
+      "isAdmin": false,
+      "pin": ""
     },
     {
-      "pin": "",
-      "isAdmin": false,
       "color": "emerald",
-      "id": "coach_1783759478774",
-      "name": "Sandro"
+      "pin": "",
+      "isAdmin": false,
+      "name": "Sandro",
+      "id": "coach_1783759478774"
     },
     {
-      "id": "coach_1783760358350",
-      "isAdmin": false,
+      "pin": "",
       "name": "Test Coach 123",
-      "pin": "",
-      "color": "emerald"
+      "color": "emerald",
+      "id": "coach_1783760358350",
+      "isAdmin": false
     },
     {
-      "isAdmin": false,
-      "name": "prova",
+      "color": "emerald",
       "id": "coach_1783839911036",
-      "color": "emerald",
-      "pin": ""
+      "pin": "",
+      "name": "prova",
+      "isAdmin": false
     },
     {
-      "name": "Sandro Test",
-      "isAdmin": false,
+      "pin": "",
       "color": "emerald",
+      "isAdmin": false,
       "id": "coach_1783941485301",
-      "pin": ""
+      "name": "Sandro Test"
     }
   ],
+  "paypalUrl": "https://paypal.me/LorenzoWellness",
   "slots": [
     {
       "id": "viso_2026-09-28_15:00",
-      "isCustom": true,
+      "treatmentType": "viso",
       "slotType": "fisso",
-      "time": "15:00",
       "date": "2026-09-28",
-      "treatmentType": "viso"
+      "isCustom": true,
+      "time": "15:00"
     },
     {
-      "isCustom": true,
+      "date": "2026-10-10",
       "slotType": "extra",
+      "treatmentType": "viso",
       "id": "viso_2026-10-10_10:00",
-      "date": "2026-10-10",
-      "time": "10:00",
-      "treatmentType": "viso"
+      "isCustom": true,
+      "time": "10:00"
     },
     {
-      "treatmentType": "viso",
+      "id": "viso_2026-10-10_12:00",
       "isCustom": true,
       "slotType": "extra",
-      "id": "viso_2026-10-10_12:00",
-      "date": "2026-10-10",
-      "time": "12:00"
+      "treatmentType": "viso",
+      "time": "12:00",
+      "date": "2026-10-10"
     },
     {
-      "treatmentType": "viso",
+      "slotType": "extra",
       "date": "2026-10-10",
+      "isCustom": true,
       "time": "14:30",
       "id": "viso_2026-10-10_14:30",
-      "slotType": "extra",
-      "isCustom": true
+      "treatmentType": "viso"
     },
     {
       "isCustom": true,
       "id": "viso_2026-10-10_16:00",
       "slotType": "extra",
-      "time": "16:00",
       "date": "2026-10-10",
-      "treatmentType": "viso"
+      "treatmentType": "viso",
+      "time": "16:00"
     }
   ],
+  "slotRestrictions": {},
+  "firstMonthFree": true,
+  "adminPassword": "admin123",
   "utilities": [],
-  "notifications": [
-    {
-      "id": "notif_1791023758886_4odqk",
-      "title": "🏦 Bonifico Quota Ricevuto - Test Coach (Agosto 2026)",
-      "message": "Il socio \"Test Coach\" (Coach: Test Coach) ha confermato il bonifico di €30 per la quota di Agosto 2026. In attesa di approvazione per lo sblocco.",
-      "senderName": "Test Coach",
-      "senderId": "coach_1783758911586",
-      "recipientId": "admin",
-      "timestamp": 1791023758886,
-      "readBy": []
-    },
-    {
-      "timestamp": 1790920473189,
-      "message": "Il bonifico di €30 per la quota di Ottobre 2026 (Sandro) è stato verificato e approvato dall'amministratore. Il profilo è ora sbloccato e le prenotazioni sono attive!",
-      "recipientId": "coach_1783759478774",
-      "id": "notif_1790920473189_ij1mf",
-      "title": "✅ Bonifico Approvato - Quota Ottobre 2026",
-      "readBy": [],
-      "senderName": "Amministrazione",
-      "senderId": "admin"
-    },
-    {
-      "timestamp": 1790920467266,
-      "senderName": "Sandro",
-      "senderId": "coach_1783759478774",
-      "readBy": [],
-      "id": "notif_1790920467266_xsbsi",
-      "message": "Il socio \"Sandro\" (Coach: Sandro) ha confermato il bonifico di €30 per la quota di Ottobre 2026. CRO/Rif: CRO99887766. Note: Bonifico effettuato online. In attesa di approvazione per lo sblocco.",
-      "recipientId": "admin",
-      "title": "🏦 Bonifico Quota Ricevuto - Sandro (Ottobre 2026)"
-    }
-  ],
-  "contacts": [
-    {
-      "sport": true,
-      "productsPurchased": "Gel detergente, maschera",
-      "id": "contact_1784094893547_hc9ti",
-      "notes": "",
-      "evaluation": true,
-      "skinDate": "2026-07-15",
-      "activityInfo": true,
-      "coachId": "coach_1",
-      "reminderCompleted": false,
-      "hasReminder": false,
-      "contactName": "Lorenzo Fagi",
-      "timestamp": 1790511763651
-    },
-    {
-      "phone": "3911824089",
-      "sport": true,
-      "evaluation": false,
-      "id": "contact_1784095252315_hfz83",
-      "contactName": "Lorenzo Fagi",
-      "hasReminder": true,
-      "reminderCompleted": false,
-      "skinDate": "2026-07-15",
-      "notes": "",
-      "activityInfo": true,
-      "reminderDate": "2026-09-28",
-      "productsPurchased": "Formula 1, aloe, maschera e collagene",
-      "coachId": "coach_1",
-      "reminderDays": 1,
-      "timestamp": 1790511953994,
-      "reminderNote": "Follow-up contatto"
-    },
-    {
-      "contactName": "Loren",
-      "timestamp": 1790511936432,
-      "notes": "",
-      "coachId": "coach_1",
-      "hasReminder": true,
-      "reminderCompleted": false,
-      "id": "contact_1790511936432_d723d",
-      "evaluation": false,
-      "skinDate": "2026-09-27",
-      "reminderNote": "Secondo barattolo di collagene",
-      "phone": "2002394213",
-      "productsPurchased": "",
-      "reminderDays": 25,
-      "sport": false,
-      "reminderCreatedAt": 1790511936432,
-      "reminderDate": "2026-10-22",
-      "smartboxTagliando": false,
-      "activityInfo": true
-    }
-  ],
-  "bookings": [
-    {
-      "id": "booking_1790852373269_1_yij13",
-      "slotId": "viso_2026-10-02_15:00",
-      "guestName": "ciao",
-      "notes": "(Insieme a: ciao2)",
-      "timestamp": 1790852373269,
-      "coachId": "coach_1"
-    },
-    {
-      "slotId": "viso_2026-10-02_15:00",
-      "coachId": "coach_1",
-      "notes": "(Insieme a: ciao)",
-      "guestName": "ciao2",
-      "id": "booking_1790852373269_2_lmo4c",
-      "timestamp": 1790852373270
-    },
-    {
-      "coachId": "coach_1",
-      "guestName": "ciao ciao",
-      "id": "booking_1790852387944_i673f",
-      "notes": "",
-      "slotId": "viso_2026-10-02_15:00",
-      "timestamp": 1790852387944
-    }
-  ],
-  "earnings": [],
+  "maxFutureWeeks": 2,
+  "ibanHolder": "Lorenzo Wellness",
   "members": [
     {
-      "payments": {
-        "2026-08": false,
-        "2026-07": true
-      },
-      "registrationMonth": "2026-07",
+      "name": "Test Coach",
       "coachId": "coach_1783758911586",
-      "id": "member_1783758911586_frbs7",
-      "name": "Test Coach"
-    },
-    {
-      "coachId": "coach_1783759478774",
-      "name": "Sandro",
-      "id": "member_1783759478774_q134g",
+      "registrationMonth": "2026-07",
       "payments": {
-        "2026-10": true,
         "2026-07": true,
         "2026-08": false
       },
-      "registrationMonth": "2026-07"
+      "id": "member_1783758911586_frbs7"
+    },
+    {
+      "id": "member_1783759478774_q134g",
+      "name": "Sandro",
+      "coachId": "coach_1783759478774",
+      "registrationMonth": "2026-07",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false,
+        "2026-10": true
+      }
     },
     {
       "id": "member_1783760358350_4132d",
-      "name": "Test Coach 123",
-      "coachId": "coach_1783760358350",
       "payments": {
-        "2026-08": false,
-        "2026-07": true
+        "2026-07": true,
+        "2026-08": false
       },
-      "registrationMonth": "2026-07"
+      "registrationMonth": "2026-07",
+      "coachId": "coach_1783760358350",
+      "name": "Test Coach 123"
     },
     {
-      "registrationMonth": "2026-07",
-      "payments": {
-        "2026-08": false,
-        "2026-07": true
-      },
-      "name": "prova",
       "coachId": "coach_1783839911036",
+      "payments": {
+        "2026-07": true,
+        "2026-08": false
+      },
+      "registrationMonth": "2026-07",
+      "name": "prova",
       "id": "member_1783839911036_0ehol"
     },
     {
-      "id": "member_1783941485301_jsi9h",
       "name": "Sandro Test",
+      "coachId": "coach_1783941485301",
       "registrationMonth": "2026-07",
+      "id": "member_1783941485301_jsi9h",
       "payments": {
-        "2026-08": false,
-        "2026-07": true
-      },
-      "coachId": "coach_1783941485301"
+        "2026-07": true,
+        "2026-08": false
+      }
     },
     {
-      "name": "Lorenzo",
-      "registrationMonth": "2026-10",
       "payments": {
-        "2026-10": true,
-        "2026-11": false
+        "2026-11": false,
+        "2026-10": true
       },
+      "name": "Lorenzo",
+      "coachId": "coach_1",
+      "registrationMonth": "2026-10",
       "quotaAmount": 30,
-      "id": "member_1790852269614_hkaqo",
-      "coachId": "coach_1"
+      "id": "member_1790852269614_hkaqo"
+    }
+  ],
+  "quotaAmount": 30,
+  "notifications": [
+    {
+      "timestamp": 1791023758886,
+      "recipientId": "admin",
+      "message": "Il socio \"Test Coach\" (Coach: Test Coach) ha confermato il bonifico di €30 per la quota di Agosto 2026. In attesa di approvazione per lo sblocco.",
+      "id": "notif_1791023758886_4odqk",
+      "senderId": "coach_1783758911586",
+      "title": "🏦 Bonifico Quota Ricevuto - Test Coach (Agosto 2026)",
+      "readBy": [],
+      "senderName": "Test Coach"
+    },
+    {
+      "id": "notif_1790920473189_ij1mf",
+      "recipientId": "coach_1783759478774",
+      "timestamp": 1790920473189,
+      "message": "Il bonifico di €30 per la quota di Ottobre 2026 (Sandro) è stato verificato e approvato dall'amministratore. Il profilo è ora sbloccato e le prenotazioni sono attive!",
+      "senderName": "Amministrazione",
+      "senderId": "admin",
+      "readBy": [],
+      "title": "✅ Bonifico Approvato - Quota Ottobre 2026"
+    },
+    {
+      "id": "notif_1790920467266_xsbsi",
+      "timestamp": 1790920467266,
+      "readBy": [],
+      "senderId": "coach_1783759478774",
+      "senderName": "Sandro",
+      "title": "🏦 Bonifico Quota Ricevuto - Sandro (Ottobre 2026)",
+      "message": "Il socio \"Sandro\" (Coach: Sandro) ha confermato il bonifico di €30 per la quota di Ottobre 2026. CRO/Rif: CRO99887766. Note: Bonifico effettuato online. In attesa di approvazione per lo sblocco.",
+      "recipientId": "admin"
     }
   ],
   "events": [],
@@ -317,21 +245,105 @@
     "title": "HOM - Herbalife Opportunity Meeting",
     "time": "20:30"
   },
-  "iban": "IT12X1234512345123456789012",
-  "maxFutureWeeks": 2,
-  "paypalUrl": "https://paypal.me/LorenzoWellness",
-  "quotaAmount": 30,
-  "slotRestrictions": {},
-  "pendingCoachRegistrations": [],
+  "contacts": [
+    {
+      "timestamp": 1790511763651,
+      "evaluation": true,
+      "skinDate": "2026-07-15",
+      "id": "contact_1784094893547_hc9ti",
+      "hasReminder": false,
+      "coachId": "coach_1",
+      "contactName": "Lorenzo Fagi",
+      "reminderCompleted": false,
+      "sport": true,
+      "productsPurchased": "Gel detergente, maschera",
+      "activityInfo": true,
+      "notes": ""
+    },
+    {
+      "reminderCompleted": false,
+      "timestamp": 1790511953994,
+      "reminderDays": 1,
+      "reminderNote": "Follow-up contatto",
+      "skinDate": "2026-07-15",
+      "evaluation": false,
+      "reminderDate": "2026-09-28",
+      "hasReminder": true,
+      "id": "contact_1784095252315_hfz83",
+      "productsPurchased": "Formula 1, aloe, maschera e collagene",
+      "activityInfo": true,
+      "notes": "",
+      "phone": "3911824089",
+      "coachId": "coach_1",
+      "sport": true,
+      "contactName": "Lorenzo Fagi"
+    },
+    {
+      "reminderDate": "2026-10-22",
+      "timestamp": 1790511936432,
+      "reminderNote": "Secondo barattolo di collagene",
+      "reminderCompleted": false,
+      "reminderDays": 25,
+      "sport": false,
+      "id": "contact_1790511936432_d723d",
+      "hasReminder": true,
+      "phone": "2002394213",
+      "notes": "",
+      "coachId": "coach_1",
+      "smartboxTagliando": false,
+      "reminderCreatedAt": 1790511936432,
+      "productsPurchased": "",
+      "skinDate": "2026-09-27",
+      "evaluation": false,
+      "contactName": "Loren",
+      "activityInfo": true
+    }
+  ],
+  "earnings": [],
+  "bookings": [
+    {
+      "guestName": "ciao",
+      "notes": "(Insieme a: ciao2)",
+      "slotId": "viso_2026-10-02_15:00",
+      "timestamp": 1790852373269,
+      "id": "booking_1790852373269_1_yij13",
+      "coachId": "coach_1"
+    },
+    {
+      "guestName": "ciao2",
+      "notes": "(Insieme a: ciao)",
+      "id": "booking_1790852373269_2_lmo4c",
+      "slotId": "viso_2026-10-02_15:00",
+      "timestamp": 1790852373270,
+      "coachId": "coach_1"
+    },
+    {
+      "coachId": "coach_1",
+      "notes": "",
+      "timestamp": 1790852387944,
+      "slotId": "viso_2026-10-02_15:00",
+      "id": "booking_1790852387944_i673f",
+      "guestName": "ciao ciao"
+    }
+  ],
   "shakePartyConfig": {
-    "time": "20:30",
-    "title": "Shake Party Mensile",
+    "date": "",
     "notes": "",
-    "date": ""
+    "title": "Shake Party Mensile",
+    "time": "20:30"
   },
-  "ibanHolder": "Lorenzo Wellness",
-  "cheques": [],
   "satispayUrl": "+39 333 1234567",
-  "firstMonthFree": true,
-  "adminPassword": "admin123"
+  "pendingCoachRegistrations": []
+}",
+      "timestamp": 1791224088447
+    }
+  ],
+  "shakePartyConfig": {
+    "date": "",
+    "notes": "",
+    "title": "Shake Party Mensile",
+    "time": "20:30"
+  },
+  "satispayUrl": "+39 333 1234567",
+  "pendingCoachRegistrations": []
 }

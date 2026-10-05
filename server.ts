@@ -325,10 +325,86 @@ function parseTimeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
+function extractInsiemeName(notes?: string): string {
+  if (!notes) return '';
+  const match = notes.match(/insieme a:\s*([^)]+)/i);
+  return match ? match[1].trim().toLowerCase() : '';
+}
+
+function enrichPairInfo(bookings: Booking[]): Booking[] {
+  const result: Booking[] = bookings.map(b => ({ ...b }));
+  const norm = (s?: string) => (s || '').trim().toLowerCase();
+
+  // First pass: Link bookings that already have matching groupId
+  const groupMap = new Map<string, Booking[]>();
+  for (const b of result) {
+    if (b.groupId) {
+      const list = groupMap.get(b.groupId) || [];
+      list.push(b);
+      groupMap.set(b.groupId, list);
+    }
+  }
+
+  for (const [_, members] of groupMap.entries()) {
+    if (members.length >= 2) {
+      for (const m of members) {
+        if (!m.pairGuestName) {
+          const other = members.find(o => o.id !== m.id);
+          if (other) m.pairGuestName = other.guestName;
+        }
+      }
+    }
+  }
+
+  // Second pass: Detect unlinked pairs in the same slot and coach
+  for (let i = 0; i < result.length; i++) {
+    const b1 = result[i];
+
+    for (let j = i + 1; j < result.length; j++) {
+      const b2 = result[j];
+      if (b1.slotId !== b2.slotId) continue;
+      if (b1.coachId !== b2.coachId) continue;
+
+      // If already in same group, done
+      if (b1.groupId && b2.groupId && b1.groupId === b2.groupId) continue;
+
+      const b1Name = norm(b1.guestName);
+      const b2Name = norm(b2.guestName);
+
+      // Check explicit pairGuestName
+      const pairMatch = 
+        (norm(b1.pairGuestName) && norm(b1.pairGuestName) === b2Name) ||
+        (norm(b2.pairGuestName) && norm(b2.pairGuestName) === b1Name);
+
+      // Check notes: "(Insieme a: <name>)"
+      const b1Insieme = extractInsiemeName(b1.notes);
+      const b2Insieme = extractInsiemeName(b2.notes);
+      const notesMatch = (b1Insieme && b1Insieme === b2Name) || (b2Insieme && b2Insieme === b1Name);
+
+      // Check id suffix & timestamp (e.g. created together with _1_ and _2_)
+      const isPairById = (b1.id.includes('_1_') && b2.id.includes('_2_')) || (b1.id.includes('_2_') && b2.id.includes('_1_'));
+      const timeDiff = Math.abs(b1.timestamp - b2.timestamp);
+      const isPairByTimeAndId = isPairById && timeDiff <= 5000;
+
+      if (pairMatch || notesMatch || isPairByTimeAndId) {
+        const sharedGroupId = b1.groupId || b2.groupId || `party_${Math.min(b1.timestamp, b2.timestamp)}_${b1.coachId}`;
+        b1.groupId = sharedGroupId;
+        b2.groupId = sharedGroupId;
+        if (!b1.pairGuestName) b1.pairGuestName = b2.guestName;
+        if (!b2.pairGuestName) b2.pairGuestName = b1.guestName;
+      }
+    }
+  }
+
+  return result;
+}
+
 function computeBookingsWithStatus(bookings: Booking[]): ComputedBooking[] {
+  const enriched = enrichPairInfo(bookings);
+
   // Group bookings by slotId
   const slotGroups: { [slotId: string]: Booking[] } = {};
-  for (const b of bookings) {
+  for (const b of enriched) {
     if (!slotGroups[b.slotId]) {
       slotGroups[b.slotId] = [];
     }
@@ -339,66 +415,60 @@ function computeBookingsWithStatus(bookings: Booking[]): ComputedBooking[] {
 
   for (const slotId in slotGroups) {
     const slotBookings = slotGroups[slotId];
-    
-    // Check if the event date is within 2 days of "now"
-    const parts = slotId.split('_');
-    let isWithin2Days = false;
-    if (parts.length >= 3) {
-      const dateStr = parts[1]; // "YYYY-MM-DD"
-      const timeStr = parts[2]; // "HH:MM"
-      try {
-        const eventDate = new Date(`${dateStr}T${timeStr}:00`);
-        const diffMs = eventDate.getTime() - Date.now();
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        isWithin2Days = diffDays <= 2;
-      } catch (err) {
-        // ignore parsing errors
-      }
-    }
-    
-    // Group slot bookings by coachId
-    const coachGroups: { [coachId: string]: Booking[] } = {};
+
+    // Form parties: people booked together stay strictly adjacent in the list
+    const parties: Booking[][] = [];
+    const visited = new Set<string>();
+
     for (const b of slotBookings) {
-      if (!coachGroups[b.coachId]) {
-        coachGroups[b.coachId] = [];
+      if (visited.has(b.id)) continue;
+      visited.add(b.id);
+
+      if (b.groupId) {
+        const companions = slotBookings.filter(other => other.id !== b.id && other.groupId === b.groupId && !visited.has(other.id));
+        companions.forEach(c => visited.add(c.id));
+        // Sort within party so 1st guest is first, 2nd guest is second
+        const party = [b, ...companions].sort((x, y) => x.timestamp - y.timestamp);
+        parties.push(party);
+      } else if (b.pairGuestName) {
+        const normPair = (b.pairGuestName || '').trim().toLowerCase();
+        const companion = slotBookings.find(other => other.id !== b.id && !visited.has(other.id) && (
+          (other.guestName || '').trim().toLowerCase() === normPair ||
+          (other.pairGuestName || '').trim().toLowerCase() === (b.guestName || '').trim().toLowerCase()
+        ));
+        if (companion) {
+          visited.add(companion.id);
+          const party = [b, companion].sort((x, y) => x.timestamp - y.timestamp);
+          parties.push(party);
+        } else {
+          parties.push([b]);
+        }
+      } else {
+        parties.push([b]);
       }
-      coachGroups[b.coachId].push(b);
     }
 
-    // Sort each coach's bookings by timestamp to assign coachIndex
-    const bookingsWithCoachIndex: Array<Booking & { coachIndex: number }> = [];
-    for (const coachId in coachGroups) {
-      const coachB = coachGroups[coachId];
-      // Sort by timestamp ascending to preserve coach order
-      coachB.sort((x, y) => x.timestamp - y.timestamp);
-      coachB.forEach((b, index) => {
-        bookingsWithCoachIndex.push({
-          ...b,
-          coachIndex: index,
-        });
-      });
-    }
-
-    // Sort bookings according to our golden priority rules:
-    // If within 2 days of the event, sort strictly by timestamp ascending (first-come, first-served)
-    // Else (more than 2 days away), sort by coachIndex ascending, then timestamp ascending (balancing queue)
-    bookingsWithCoachIndex.sort((x, y) => {
-      if (isWithin2Days) {
-        return x.timestamp - y.timestamp;
-      }
-      if (x.coachIndex !== y.coachIndex) {
-        return x.coachIndex - y.coachIndex;
-      }
-      return x.timestamp - y.timestamp;
+    // Sort parties by the earliest timestamp of each party (chronological reservation order)
+    parties.sort((p1, p2) => {
+      const t1 = Math.min(...p1.map(b => b.timestamp));
+      const t2 = Math.min(...p2.map(b => b.timestamp));
+      return t1 - t2;
     });
 
-    // Mark status: for Shake Party and HOM, there are no limits, all are 'confermato'!
-    // For regular slots (viso), first 12 are 'confermato', rest are 'riserva'
-    bookingsWithCoachIndex.forEach((b, sortedIndex) => {
+    // Flatten parties into sorted slot bookings: pairs are guaranteed to be contiguous
+    const orderedBookings: Booking[] = parties.flat();
+
+    // Assign coachIndex and confirmation status (first 12 confirmed, rest riserva)
+    const coachBookingCount: { [coachId: string]: number } = {};
+    orderedBookings.forEach((b, sortedIndex) => {
+      const cIdx = coachBookingCount[b.coachId] || 0;
+      coachBookingCount[b.coachId] = cIdx + 1;
+
       const isUnlimited = b.slotId.startsWith('shakeparty_') || b.slotId.startsWith('hom_');
       const status = isUnlimited ? 'confermato' : (sortedIndex < 12 ? 'confermato' : 'riserva');
       computedBookings.push({
         ...b,
+        coachIndex: cIdx,
         status,
       });
     });
@@ -1508,6 +1578,7 @@ app.post('/api/bookings', async (req, res) => {
 
   if (requestedPartySize === 2) {
     const sName = normalizedSecondName;
+    const groupId = `party_${timestamp}_${Math.random().toString(36).substr(2, 6)}`;
     const b1: Booking = {
       id: `booking_${timestamp}_1_${Math.random().toString(36).substr(2, 5)}`,
       slotId,
@@ -1515,6 +1586,8 @@ app.post('/api/bookings', async (req, res) => {
       guestName: normalizedName,
       notes: notes ? `${notes} (Insieme a: ${sName})` : `(Insieme a: ${sName})`,
       timestamp,
+      groupId,
+      pairGuestName: sName,
     };
     const b2: Booking = {
       id: `booking_${timestamp}_2_${Math.random().toString(36).substr(2, 5)}`,
@@ -1523,6 +1596,8 @@ app.post('/api/bookings', async (req, res) => {
       guestName: sName,
       notes: notes ? `${notes} (Insieme a: ${normalizedName})` : `(Insieme a: ${normalizedName})`,
       timestamp: timestamp + 1,
+      groupId,
+      pairGuestName: normalizedName,
     };
 
     db.bookings.push(b1, b2);
@@ -1854,6 +1929,7 @@ app.post('/api/public-bookings', async (req, res) => {
 
   if (requestedSize === 2) {
     const sName = secondGuestName && secondGuestName.trim() ? secondGuestName.trim() : `${guestName.trim()} (Ospite 2)`;
+    const publicGroupId = `party_${timestamp}_${Math.random().toString(36).substr(2, 6)}`;
     const b1: Booking = {
       id: `booking_${timestamp}_1_${Math.random().toString(36).substr(2, 5)}`,
       slotId,
@@ -1861,6 +1937,8 @@ app.post('/api/public-bookings', async (req, res) => {
       guestName: guestName.trim(),
       notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 1: ${guestName.trim()}). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
       timestamp,
+      groupId: publicGroupId,
+      pairGuestName: sName,
     };
     const b2: Booking = {
       id: `booking_${timestamp}_2_${Math.random().toString(36).substr(2, 5)}`,
@@ -1868,7 +1946,9 @@ app.post('/api/public-bookings', async (req, res) => {
       coachId,
       guestName: sName,
       notes: `Prenotato autonomamente tramite Link Cliente (Gruppo da 2, Ospite 2: ${sName}). Cell: ${cleanPhone}${cleanNotes ? ` - Note: ${cleanNotes}` : ''}`,
-      timestamp,
+      timestamp: timestamp + 1,
+      groupId: publicGroupId,
+      pairGuestName: guestName.trim(),
     };
     db.bookings.push(b1, b2);
     bookingsCreated.push(b1, b2);
@@ -2075,7 +2155,24 @@ app.put('/api/bookings/:id', async (req, res) => {
     }
   }
 
-  if (guestName !== undefined) db.bookings[bookingIdx].guestName = guestName;
+  if (guestName !== undefined) {
+    const oldName = db.bookings[bookingIdx].guestName;
+    db.bookings[bookingIdx].guestName = guestName;
+
+    // If this booking has a companion in the same group, sync the companion's pairGuestName
+    const currentGroupId = db.bookings[bookingIdx].groupId;
+    const companion = db.bookings.find(b => b.id !== id && (
+      (currentGroupId && b.groupId === currentGroupId) ||
+      (b.slotId === db.bookings[bookingIdx].slotId && b.coachId === db.bookings[bookingIdx].coachId && (b.pairGuestName === oldName || b.notes?.includes(oldName)))
+    ));
+
+    if (companion) {
+      companion.pairGuestName = guestName;
+      if (companion.notes && oldName) {
+        companion.notes = companion.notes.replace(oldName, guestName);
+      }
+    }
+  }
   if (notes !== undefined) db.bookings[bookingIdx].notes = notes;
   if (slotId !== undefined) db.bookings[bookingIdx].slotId = slotId;
 
@@ -2100,6 +2197,21 @@ app.delete('/api/bookings/:id', async (req, res) => {
   // Restrict to the owner coach of this booking
   if (booking.coachId !== coachId) {
     return res.status(403).json({ error: 'Non sei autorizzato a cancellare la prenotazione di un altro coach' });
+  }
+
+  // If this booking had a companion in the same group or mutual pair info, clear the companion's pair reference
+  if (booking.groupId) {
+    const companion = db.bookings.find(b => b.id !== id && b.groupId === booking.groupId);
+    if (companion) {
+      delete companion.pairGuestName;
+      delete companion.groupId;
+    }
+  } else if (booking.pairGuestName) {
+    const companion = db.bookings.find(b => b.id !== id && b.slotId === booking.slotId && (b.pairGuestName === booking.guestName || b.guestName === booking.pairGuestName));
+    if (companion) {
+      delete companion.pairGuestName;
+      delete companion.groupId;
+    }
   }
 
   db.bookings = db.bookings.filter(b => b.id !== id);

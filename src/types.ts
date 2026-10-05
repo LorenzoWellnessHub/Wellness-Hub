@@ -30,12 +30,16 @@ export interface Booking {
   guestName: string;
   notes?: string;
   timestamp: number; // For priority queue calculation
+  groupId?: string; // Identifier for guests booked together in the same submission
+  pairGuestName?: string; // Companion guest name booked together
 }
 
 // Derived booking with state calculated at runtime
 export interface ComputedBooking extends Booking {
   coachIndex: number; // 0-based index of this guest among the coach's guests for this slot
   status: 'confermato' | 'riserva';
+  groupId?: string;
+  pairGuestName?: string;
 }
 
 export interface Member {

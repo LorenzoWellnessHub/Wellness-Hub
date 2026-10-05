@@ -264,6 +264,12 @@ export const CompactWeeklyCalendar: React.FC<CompactWeeklyCalendarProps> = ({
                                   >
                                     <span className={`w-1.5 h-1.5 rounded-full ${coachStyles.solid}`} />
                                     <strong className="text-slate-800">{b.guestName}</strong>
+                                    {b.pairGuestName && (
+                                      <span className="text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200 font-semibold flex items-center gap-0.5">
+                                        <Users className="w-2.5 h-2.5" />
+                                        con {b.pairGuestName}
+                                      </span>
+                                    )}
                                     <span className="text-[9px] text-slate-400">({coach?.name || 'Coach'})</span>
                                     {b.status === 'riserva' && (
                                       <span className="text-[8px] font-bold text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
