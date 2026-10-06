@@ -38,7 +38,10 @@ import {
   FileText,
   Image,
   ExternalLink,
-  Upload
+  Upload,
+  Maximize2,
+  Minimize2,
+  RotateCcw
 } from 'lucide-react';
 import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, PaymentRequest, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact, ShakePartyConfig, HomConfig } from './types';
 import PublicClientBooking from './components/PublicClientBooking';
@@ -177,6 +180,9 @@ export default function App() {
   });
   const [newContactReminderNote, setNewContactReminderNote] = useState<string>('Follow-up contatto e feedback');
   const [contactsTabFilter, setContactsTabFilter] = useState<'all' | 'urgent' | 'reminders' | 'completed'>('all');
+  const [selectedSkinMonthFilter, setSelectedSkinMonthFilter] = useState<string>('all');
+  const [selectedInterestFilter, setSelectedInterestFilter] = useState<string>('all');
+  const [isContactsDbFullscreen, setIsContactsDbFullscreen] = useState<boolean>(true);
   const [isRemindersDrawerOpen, setIsRemindersDrawerOpen] = useState<boolean>(false);
   const [quickReminderContact, setQuickReminderContact] = useState<Contact | null>(null);
   const [quickReminderDays, setQuickReminderDays] = useState<number>(7);
@@ -3744,6 +3750,7 @@ export default function App() {
                             if (!currentCoachId) {
                               alert('Seleziona un profilo operatore prima di accedere al Database Contatti.');
                             } else {
+                              setIsContactsDbFullscreen(true);
                               setIsContactsDbOpen(true);
                             }
                             setIsUtilityDropdownOpen(false);
@@ -9862,9 +9869,62 @@ export default function App() {
         const activeCoach = coaches.find(c => c.id === currentCoachId);
         if (!activeCoach) return null;
 
-        // Filter contacts by search query & reminder filter
+        // Compute available treatment months from contacts' skinDate
+        const availableSkinMonthsList: { ymKey: string; label: string; count: number }[] = [];
+        let withoutDateCount = 0;
+        const monthCountMap: { [ymKey: string]: { label: string; count: number } } = {};
+
+        contacts.forEach(c => {
+          if (!c.skinDate || !c.skinDate.trim()) {
+            withoutDateCount++;
+            return;
+          }
+          const clean = c.skinDate.trim();
+          let ym = '';
+          let label = '';
+          const match = clean.match(/^(\d{4})-(\d{2})/);
+          if (match) {
+            ym = `${match[1]}-${match[2]}`;
+            const year = parseInt(match[1], 10);
+            const month = parseInt(match[2], 10);
+            const d = new Date(year, month - 1, 1);
+            const rawLabel = d.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+            label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+          } else {
+            const d = new Date(clean);
+            if (!isNaN(d.getTime())) {
+              ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+              const rawLabel = d.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+              label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+            } else {
+              withoutDateCount++;
+              return;
+            }
+          }
+
+          if (!monthCountMap[ym]) {
+            monthCountMap[ym] = { label, count: 0 };
+          }
+          monthCountMap[ym].count++;
+        });
+
+        Object.keys(monthCountMap)
+          .sort((a, b) => b.localeCompare(a))
+          .forEach(k => {
+            availableSkinMonthsList.push({ ymKey: k, label: monthCountMap[k].label, count: monthCountMap[k].count });
+          });
+
+        // Compute interest counts for filters
+        const evaluationCount = contacts.filter(c => c.evaluation).length;
+        const activityInfoCount = contacts.filter(c => c.activityInfo).length;
+        const sportCount = contacts.filter(c => c.sport).length;
+        const smartboxCount = contacts.filter(c => c.smartboxTagliando).length;
+        const hasAnyInterestCount = contacts.filter(c => c.evaluation || c.activityInfo || c.sport || c.smartboxTagliando).length;
+        const noneInterestCount = contacts.filter(c => !c.evaluation && !c.activityInfo && !c.sport && !c.smartboxTagliando).length;
+
+        // Filter contacts by tab, month, interest, and search query
         const filteredContacts = contacts.filter(c => {
-          // Tab filter
+          // 1. Tab filter
           if (contactsTabFilter === 'urgent') {
             if (!c.hasReminder || !c.reminderDate || c.reminderCompleted) return false;
             const today = new Date();
@@ -9878,24 +9938,991 @@ export default function App() {
             if (!c.hasReminder || !c.reminderCompleted) return false;
           }
 
+          // 2. Month of treatment (skinDate) filter
+          if (selectedSkinMonthFilter !== 'all') {
+            if (selectedSkinMonthFilter === 'none') {
+              if (c.skinDate && c.skinDate.trim()) return false;
+            } else {
+              if (!c.skinDate || !c.skinDate.trim()) return false;
+              const clean = c.skinDate.trim();
+              let ym = '';
+              const match = clean.match(/^(\d{4})-(\d{2})/);
+              if (match) {
+                ym = `${match[1]}-${match[2]}`;
+              } else {
+                const d = new Date(clean);
+                if (!isNaN(d.getTime())) {
+                  ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                }
+              }
+              if (ym !== selectedSkinMonthFilter) return false;
+            }
+          }
+
+          // 3. Interest checkbox filter
+          if (selectedInterestFilter !== 'all') {
+            if (selectedInterestFilter === 'evaluation' && !c.evaluation) return false;
+            if (selectedInterestFilter === 'activityInfo' && !c.activityInfo) return false;
+            if (selectedInterestFilter === 'sport' && !c.sport) return false;
+            if (selectedInterestFilter === 'smartboxTagliando' && !c.smartboxTagliando) return false;
+            if (selectedInterestFilter === 'has_any' && !(c.evaluation || c.activityInfo || c.sport || c.smartboxTagliando)) return false;
+            if (selectedInterestFilter === 'none' && (c.evaluation || c.activityInfo || c.sport || c.smartboxTagliando)) return false;
+          }
+
+          // 4. Search query
           if (!searchContactQuery.trim()) return true;
           const query = searchContactQuery.toLowerCase();
           return (
             c.contactName.toLowerCase().includes(query) ||
             (c.phone && String(c.phone).toLowerCase().includes(query)) ||
-            c.productsPurchased.toLowerCase().includes(query) ||
-            c.notes.toLowerCase().includes(query) ||
+            (c.productsPurchased && c.productsPurchased.toLowerCase().includes(query)) ||
+            (c.notes && c.notes.toLowerCase().includes(query)) ||
             (c.reminderNote && c.reminderNote.toLowerCase().includes(query)) ||
             ((query.includes('smartbox') || query.includes('tagliando')) && c.smartboxTagliando)
           );
         });
 
-        return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl border border-slate-150 overflow-hidden animate-scale-up text-slate-800 flex flex-col max-h-[92vh]">
+        const activeMonthLabel = selectedSkinMonthFilter === 'all' 
+          ? '' 
+          : selectedSkinMonthFilter === 'none' 
+          ? 'Senza data' 
+          : availableSkinMonthsList.find(m => m.ymKey === selectedSkinMonthFilter)?.label || selectedSkinMonthFilter;
+
+        const hasActiveFilters = selectedSkinMonthFilter !== 'all' || selectedInterestFilter !== 'all' || searchContactQuery.trim() !== '' || contactsTabFilter !== 'all';
+
+        // Content of the form
+        const renderContactForm = () => (
+          <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-3xs text-left h-full flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                {editingContactId ? '✏️ Modifica Contatto' : '➕ Nuovo Contatto'}
+              </h4>
+              {editingContactId && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                  In Modifica
+                </span>
+              )}
+            </div>
+            
+            <form onSubmit={handleSaveContact} className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3.5">
+              {/* Name */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
+                  Nome Contatto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newContactName}
+                  onChange={(e) => setNewContactName(e.target.value)}
+                  placeholder="es. Mario Rossi"
+                  className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                />
+              </div>
+
+              {/* Cellulare */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
+                  Cellulare (WhatsApp)
+                </label>
+                <input
+                  type="tel"
+                  value={newContactPhone}
+                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  placeholder="es. +39 340 123 4567"
+                  className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                />
+              </div>
+
+              {/* Skin Date (Mese/Data Trattamento Effettuato) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider">
+                    Data Trattamento (Skin)
+                  </label>
+                  {newContactSkinDate && (() => {
+                    const match = newContactSkinDate.match(/^(\d{4})-(\d{2})/);
+                    if (match) {
+                      const d = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, 1);
+                      return (
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded capitalize">
+                          {d.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+                <input
+                  type="date"
+                  value={newContactSkinDate}
+                  onChange={(e) => setNewContactSkinDate(e.target.value)}
+                  className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
+                />
+              </div>
+
+              {/* Checkboxes Group: Interessi */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5">
+                <span className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                  Spunte di Interesse
+                </span>
+                
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                    <span>📊</span> Valutazione
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={newContactEvaluation}
+                    onChange={(e) => setNewContactEvaluation(e.target.checked)}
+                    className="w-4.5 h-4.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                    <span>ℹ️</span> Info Attività
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={newContactActivityInfo}
+                    onChange={(e) => setNewContactActivityInfo(e.target.checked)}
+                    className="w-4.5 h-4.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                    <span>🏃</span> Sport
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={newContactSport}
+                    onChange={(e) => setNewContactSport(e.target.checked)}
+                    className="w-4.5 h-4.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
+                    <span>🎁</span> Tagliando Smartbox
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={newContactSmartboxTagliando}
+                    onChange={(e) => setNewContactSmartboxTagliando(e.target.checked)}
+                    className="w-4.5 h-4.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Products */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
+                  Prodotti Acquistati
+                </label>
+                <textarea
+                  rows={2}
+                  value={newContactProducts}
+                  onChange={(e) => setNewContactProducts(e.target.value)}
+                  placeholder="es. Formula 1, Aloe, Infuso"
+                  className="w-full text-xs font-semibold p-2 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
+                />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
+                  Note / Dettagli
+                </label>
+                <textarea
+                  rows={2}
+                  value={newContactNotes}
+                  onChange={(e) => setNewContactNotes(e.target.value)}
+                  placeholder="es. Preferenze, prossimi appuntamenti..."
+                  className="w-full text-xs font-semibold p-2 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
+                />
+              </div>
+
+              {/* Personal Reminder / Follow-Up Section */}
+              <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-amber-50/30 p-3 rounded-2xl border border-amber-200 shadow-3xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-2 cursor-pointer select-none">
+                    <span className="text-base">🔔</span>
+                    <span>Imposta Promemoria</span>
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={newContactHasReminder}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setNewContactHasReminder(checked);
+                      if (checked && !newContactReminderDate) {
+                        const d = new Date();
+                        d.setDate(d.getDate() + (newContactReminderDays || 7));
+                        setNewContactReminderDate(d.toISOString().split('T')[0]);
+                      }
+                    }}
+                    className="w-4.5 h-4.5 rounded text-amber-600 focus:ring-amber-500 border-amber-300 cursor-pointer"
+                  />
+                </div>
+
+                {newContactHasReminder && (
+                  <div className="space-y-2.5 pt-1 border-t border-amber-200/60 animate-fade-in text-left">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider">
+                          Giorni da oggi
+                        </label>
+                        <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                          {newContactReminderDays} gg
+                        </span>
+                      </div>
+
+                      {/* Preset quick buttons */}
+                      <div className="grid grid-cols-5 gap-1 mb-1.5">
+                        {[3, 7, 14, 21, 30].map((days) => {
+                          const isSelected = newContactReminderDays === days;
+                          return (
+                            <button
+                              key={days}
+                              type="button"
+                              onClick={() => {
+                                setNewContactReminderDays(days);
+                                const d = new Date();
+                                d.setDate(d.getDate() + days);
+                                setNewContactReminderDate(d.toISOString().split('T')[0]);
+                              }}
+                              className={`py-1 px-0.5 rounded-lg text-[9px] font-black transition-all cursor-pointer border text-center ${
+                                isSelected
+                                  ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                                  : 'bg-white text-slate-700 hover:bg-amber-100/60 border-amber-200'
+                              }`}
+                            >
+                              {days} gg
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Custom Days & Date Preview */}
+                      <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-xl border border-amber-200">
+                        <div>
+                          <span className="block text-[9px] font-bold uppercase text-slate-400">Giorni</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="365"
+                            value={newContactReminderDays || ''}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              const days = isNaN(val) ? 0 : val;
+                              setNewContactReminderDays(days);
+                              if (days > 0) {
+                                const d = new Date();
+                                d.setDate(d.getDate() + days);
+                                setNewContactReminderDate(d.toISOString().split('T')[0]);
+                              }
+                            }}
+                            className="w-full text-xs font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <span className="block text-[9px] font-bold uppercase text-slate-400">Data</span>
+                          <input
+                            type="date"
+                            value={newContactReminderDate}
+                            onChange={(e) => {
+                              const dateStr = e.target.value;
+                              setNewContactReminderDate(dateStr);
+                              if (dateStr) {
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                const chosen = new Date(dateStr + 'T00:00:00');
+                                const diff = Math.round((chosen.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                if (diff >= 0) setNewContactReminderDays(diff);
+                              }
+                            }}
+                            className="w-full text-[11px] font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Reminder note */}
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider mb-1">
+                        Oggetto Promemoria
+                      </label>
+                      <input
+                        type="text"
+                        value={newContactReminderNote}
+                        onChange={(e) => setNewContactReminderNote(e.target.value)}
+                        placeholder="es. Follow-up feedback"
+                        className="w-full text-xs font-semibold p-1.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-slate-800"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex gap-2 pt-1 shrink-0">
+                <button
+                  type="submit"
+                  disabled={isSavingContact}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingContact ? 'Salvataggio...' : (editingContactId ? 'Salva Modifiche' : 'Aggiungi Contatto')}
+                </button>
+                {editingContactId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelContactEdit}
+                    className="px-3 bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    Annulla
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        );
+
+        // Content of right column: Table & Controls
+        const renderContactsTableAndFilters = () => (
+          <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full overflow-hidden p-4 sm:p-5">
+            {/* Urgent Reminders Notice Banner */}
+            {urgentReminders.length > 0 && (
+              <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-center justify-between gap-3 text-left animate-fade-in shadow-3xs mb-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">🚨</span>
+                  <div>
+                    <h4 className="text-xs font-black text-rose-900">
+                      Hai {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria in scadenza o scaduto' : 'promemoria in scadenza o scaduti'} da gestire oggi!
+                    </h4>
+                    <p className="text-[10px] text-rose-700 font-medium">
+                      Ognuno vede solo i suoi contatti: ricontatta il cliente via WhatsApp o telefono.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setContactsTabFilter('urgent')}
+                  className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-3xs"
+                >
+                  Filtra Urgenze ({urgentReminders.length})
+                </button>
+              </div>
+            )}
+
+            {/* Filter Tabs & Search Controls */}
+            <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 space-y-3 shrink-0">
+              {/* Tabs Bar */}
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <button
+                  type="button"
+                  onClick={() => setContactsTabFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    contactsTabFilter === 'all'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  Tutti i contatti ({contacts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactsTabFilter('urgent')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                    contactsTabFilter === 'urgent'
+                      ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                      : urgentReminders.length > 0
+                      ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <span>⚠️ Da Gestire Oggi / Scaduti</span>
+                  <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'urgent' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'}`}>
+                    {urgentReminders.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactsTabFilter('reminders')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                    contactsTabFilter === 'reminders'
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <span>🔔 Tutti i Promemoria</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'reminders' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'}`}>
+                    {coachRemindersList.filter(r => !r.isCompleted).length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactsTabFilter('completed')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    contactsTabFilter === 'completed'
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  ✅ Completati ({completedReminders.length})
+                </button>
+              </div>
+
+              {/* Main Filters Grid: Search, Mese Trattamento Dropdown, Spunta Interesse Dropdown */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end pt-1">
+                {/* Search Bar */}
+                <div className="md:col-span-5 relative text-left">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1">
+                    🔍 Cerca Contatto
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                    <input
+                      type="text"
+                      value={searchContactQuery}
+                      onChange={(e) => setSearchContactQuery(e.target.value)}
+                      placeholder="Cerca per nome, cellulare, prodotti, note..."
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 shadow-3xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Dropdown 1: Mese in cui hanno effettuato il trattamento */}
+                <div className="md:col-span-3 text-left">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>📅</span> Mese Trattamento
+                    </span>
+                    {selectedSkinMonthFilter !== 'all' && (
+                      <span className="text-[9px] font-extrabold text-emerald-600 lowercase bg-emerald-50 px-1 rounded">
+                        attivo
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    value={selectedSkinMonthFilter}
+                    onChange={(e) => setSelectedSkinMonthFilter(e.target.value)}
+                    className="w-full text-xs font-bold py-2 px-2.5 bg-white border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs truncate"
+                  >
+                    <option value="all">Tutti i mesi ({contacts.length})</option>
+                    {availableSkinMonthsList.map(m => (
+                      <option key={m.ymKey} value={m.ymKey}>
+                        {m.label} ({m.count} {m.count === 1 ? 'cliente' : 'clienti'})
+                      </option>
+                    ))}
+                    {withoutDateCount > 0 && (
+                      <option value="none">Senza data ({withoutDateCount})</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* Dropdown 2: Spunta di interesse messa */}
+                <div className="md:col-span-3 text-left">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>🎯</span> Spunta Interesse
+                    </span>
+                    {selectedInterestFilter !== 'all' && (
+                      <span className="text-[9px] font-extrabold text-purple-600 lowercase bg-purple-50 px-1 rounded">
+                        attivo
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    value={selectedInterestFilter}
+                    onChange={(e) => setSelectedInterestFilter(e.target.value)}
+                    className="w-full text-xs font-bold py-2 px-2.5 bg-white border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs truncate"
+                  >
+                    <option value="all">Tutti gli interessi ({contacts.length})</option>
+                    <option value="evaluation">📊 Valutazione ({evaluationCount})</option>
+                    <option value="activityInfo">ℹ️ Info Attività ({activityInfoCount})</option>
+                    <option value="sport">🏃 Sport ({sportCount})</option>
+                    <option value="smartboxTagliando">🎁 Tagliando Smartbox ({smartboxCount})</option>
+                    <option value="has_any">⭐ Almeno un interesse ({hasAnyInterestCount})</option>
+                    <option value="none">⚪ Nessun interesse ({noneInterestCount})</option>
+                  </select>
+                </div>
+
+                {/* Reset Filters Button */}
+                <div className="md:col-span-1 flex justify-end">
+                  {hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSkinMonthFilter('all');
+                        setSelectedInterestFilter('all');
+                        setSearchContactQuery('');
+                        setContactsTabFilter('all');
+                      }}
+                      className="w-full h-[37px] bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-3xs"
+                      title="Azzera tutti i filtri"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="md:hidden lg:inline text-[10px]">Azzera</span>
+                    </button>
+                  ) : (
+                    <div className="h-[37px] flex items-center justify-center text-[10px] text-slate-400 font-bold px-2">
+                      Filtri
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Interest Filter Chips & Counters */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">
+                    Filtro Rapido:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'evaluation' ? 'all' : 'evaluation')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                      selectedInterestFilter === 'evaluation'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                    }`}
+                  >
+                    <span>📊</span> Valutazione ({evaluationCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'activityInfo' ? 'all' : 'activityInfo')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                      selectedInterestFilter === 'activityInfo'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                    }`}
+                  >
+                    <span>ℹ️</span> Info Attività ({activityInfoCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'sport' ? 'all' : 'sport')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                      selectedInterestFilter === 'sport'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                    }`}
+                  >
+                    <span>🏃</span> Sport ({sportCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'smartboxTagliando' ? 'all' : 'smartboxTagliando')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                      selectedInterestFilter === 'smartboxTagliando'
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-3xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                    }`}
+                  >
+                    <span>🎁</span> Smartbox ({smartboxCount})
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                  <span>Totale: <strong className="text-slate-800">{contacts.length}</strong></span>
+                  <span>•</span>
+                  <span>Filtrati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
+                </div>
+              </div>
+
+              {/* Active Filter Badges summary */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px]">
+                  <span className="font-bold text-slate-400">Filtri applicati:</span>
+                  {selectedSkinMonthFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md px-2 py-0.5 font-bold">
+                      <span>Mese: {activeMonthLabel}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedSkinMonthFilter('all')}
+                        className="hover:text-emerald-950 font-black cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                  {selectedInterestFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-md px-2 py-0.5 font-bold">
+                      <span>
+                        Interesse: {
+                          selectedInterestFilter === 'evaluation' ? 'Valutazione' :
+                          selectedInterestFilter === 'activityInfo' ? 'Info Attività' :
+                          selectedInterestFilter === 'sport' ? 'Sport' :
+                          selectedInterestFilter === 'smartboxTagliando' ? 'Tagliando Smartbox' :
+                          selectedInterestFilter === 'has_any' ? 'Almeno un interesse' : 'Nessun interesse'
+                        }
+                      </span>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedInterestFilter('all')}
+                        className="hover:text-purple-950 font-black cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                  {searchContactQuery.trim() !== '' && (
+                    <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 rounded-md px-2 py-0.5 font-bold">
+                      <span>Cerca: &quot;{searchContactQuery}&quot;</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setSearchContactQuery('')}
+                        className="hover:text-sky-950 font-black cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Table Container */}
+            <div className="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-3xs flex-1 min-h-0 overflow-y-auto mt-3">
+              {filteredContacts.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 space-y-3">
+                  <span className="text-4xl block">📁</span>
+                  <p className="text-sm font-bold text-slate-700">Nessun contatto trovato con i filtri selezionati.</p>
+                  <p className="text-xs text-slate-400">
+                    {hasActiveFilters ? 'Prova a modificare o azzerare i filtri per visualizzare più contatti.' : 'Inizia inserendo un contatto nel modulo a sinistra.'}
+                  </p>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSkinMonthFilter('all');
+                        setSelectedInterestFilter('all');
+                        setSearchContactQuery('');
+                        setContactsTabFilter('all');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Azzera Filtri
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto h-full">
+                  <table className="w-full text-left border-collapse text-slate-800 min-w-[850px]">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                        <th className="p-3.5 pl-4">Nome Contatto</th>
+                        <th className="p-3.5">Cellulare</th>
+                        <th className="p-3.5">Mese & Data Trattamento</th>
+                        <th className="p-3.5 text-center">🔔 Promemoria</th>
+                        <th className="p-3.5 text-center w-20">Valutazione</th>
+                        <th className="p-3.5 text-center w-20">Info Attività</th>
+                        <th className="p-3.5 text-center w-16">Sport</th>
+                        <th className="p-3.5 text-center w-28">Smartbox</th>
+                        <th className="p-3.5">Prodotti Acquistati</th>
+                        <th className="p-3.5">Note</th>
+                        <th className="p-3.5 text-right pr-4 w-24">Azioni</th>
+                        <th className="p-3.5 text-center w-14 pr-4">WhatsApp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {filteredContacts.map((contact) => (
+                        <tr 
+                          key={contact.id} 
+                          className={`hover:bg-slate-50/70 transition-colors ${editingContactId === contact.id ? 'bg-amber-50/50' : ''}`}
+                        >
+                          <td className="p-3.5 pl-4 font-black text-slate-900">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedContactForDetail(contact)}
+                              className="hover:text-emerald-600 text-left transition-colors cursor-pointer outline-none focus:underline"
+                              title="Visualizza dettagli completi"
+                            >
+                              {contact.contactName}
+                            </button>
+                          </td>
+                          <td className="p-3.5 font-semibold text-slate-700 font-mono">
+                            {contact.phone || <span className="text-slate-300 italic">—</span>}
+                          </td>
+
+                          {/* Data Trattamento with Month Badge */}
+                          <td className="p-3.5 text-slate-700 font-medium">
+                            {contact.skinDate ? (
+                              <div className="space-y-0.5">
+                                <div className="font-mono font-bold text-xs text-slate-800">
+                                  {new Date(contact.skinDate).toLocaleDateString('it-IT')}
+                                </div>
+                                {(() => {
+                                  const match = contact.skinDate.trim().match(/^(\d{4})-(\d{2})/);
+                                  if (match) {
+                                    const d = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, 1);
+                                    const monthLabel = d.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
+                                    return (
+                                      <span className="inline-block text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded px-1.5 py-0.2 capitalize">
+                                        📅 {monthLabel}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 italic text-[11px]">—</span>
+                            )}
+                          </td>
+
+                          {/* Reminder status cell */}
+                          <td className="p-3.5 text-center whitespace-nowrap">
+                            {contact.hasReminder && contact.reminderDate ? (() => {
+                              const today = new Date();
+                              today.setHours(0, 0, 0, 0);
+                              const target = new Date(contact.reminderDate + 'T00:00:00');
+                              const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                              const isDone = !!contact.reminderCompleted;
+                              const isToday = !isDone && diffDays === 0;
+                              const isOverdue = !isDone && diffDays < 0;
+
+                              if (isDone) {
+                                return (
+                                  <span 
+                                    className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                    title={contact.reminderNote || 'Promemoria completato'}
+                                  >
+                                    ✓ Fatto
+                                  </span>
+                                );
+                              }
+
+                              if (isToday) {
+                                return (
+                                  <div className="inline-flex items-center gap-1">
+                                    <span 
+                                      className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-3xs"
+                                      title={`OGGI: ${contact.reminderNote || 'Follow-up'}`}
+                                    >
+                                      🔔 Oggi!
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePatchReminder(contact.id, { completed: true })}
+                                      className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
+                                      title="Segna come completato"
+                                    >
+                                      ✓
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              if (isOverdue) {
+                                return (
+                                  <div className="inline-flex items-center gap-1">
+                                    <span 
+                                      className="inline-flex items-center gap-1 bg-rose-100 text-rose-900 border border-rose-300 text-[10px] font-black px-2 py-0.5 rounded-full shadow-3xs"
+                                      title={`Scaduto da ${Math.abs(diffDays)} giorni: ${contact.reminderNote || ''}`}
+                                    >
+                                      ⚠️ {Math.abs(diffDays)} gg fa
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePatchReminder(contact.id, { completed: true })}
+                                      className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
+                                      title="Segna come completato"
+                                    >
+                                      ✓
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <span 
+                                  className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                  title={`Previsto per il ${new Date(contact.reminderDate).toLocaleDateString('it-IT')}: ${contact.reminderNote || ''}`}
+                                >
+                                  ⏰ Tra {diffDays} gg
+                                </span>
+                              );
+                            })() : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuickReminderContact(contact);
+                                  setQuickReminderDays(7);
+                                  const d = new Date();
+                                  d.setDate(d.getDate() + 7);
+                                  setQuickReminderDate(d.toISOString().split('T')[0]);
+                                  setQuickReminderNote('Follow-up contatto');
+                                }}
+                                className="text-[10px] font-bold text-slate-400 hover:text-amber-700 hover:bg-amber-50 px-2 py-0.5 rounded-lg border border-dashed border-slate-300 hover:border-amber-300 transition-all cursor-pointer"
+                                title="Imposta promemoria dopo determinati giorni"
+                              >
+                                + Promemoria
+                              </button>
+                            )}
+                          </td>
+                          
+                          {/* Checkboxes Displays: only show checkmarks */}
+                          <td className="p-3.5 text-center">
+                            {contact.evaluation ? (
+                              <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200" title="Valutazione: Sì">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {contact.activityInfo ? (
+                              <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200" title="Info Attività: Sì">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {contact.sport ? (
+                              <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200" title="Sport: Sì">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {contact.smartboxTagliando ? (
+                              <span className="inline-flex items-center justify-center bg-purple-100 text-purple-800 font-black text-xs px-2 py-0.5 rounded-full border border-purple-200" title="Tagliando Smartbox: Sì">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5 text-slate-600 max-w-[150px] truncate font-medium" title={contact.productsPurchased}>
+                            {contact.productsPurchased || <span className="text-slate-300 italic">nessuno</span>}
+                          </td>
+                          <td className="p-3.5 text-slate-600 max-w-[180px] truncate font-medium" title={contact.notes}>
+                            {contact.notes || <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="p-3.5 text-right pr-4 space-x-2">
+                            <button
+                              onClick={() => handleEditContactClick(contact)}
+                              className="text-slate-400 hover:text-amber-600 font-bold transition-colors cursor-pointer text-[11px]"
+                              title="Modifica contatto"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => handleDeleteContact(contact.id)}
+                              className="text-slate-400 hover:text-red-600 font-bold transition-colors cursor-pointer text-[11px]"
+                              title="Elimina contatto"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                          <td className="p-3.5 text-center pr-4">
+                            {contact.phone ? (() => {
+                              const cleaned = String(contact.phone).replace(/\D/g, '');
+                              const formatted = (cleaned.length === 10 && cleaned.startsWith('3')) ? '39' + cleaned : cleaned;
+                              return (
+                                <a
+                                  href={`https://wa.me/${formatted}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                                  title="Apri chat WhatsApp"
+                                >
+                                  <svg className="w-4.5 h-4.5 fill-emerald-600" viewBox="0 0 24 24">
+                                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.062 5.248 5.311 0 11.786 0c3.137.001 6.086 1.222 8.303 3.442 2.218 2.22 3.437 5.17 3.437 8.307-.005 6.486-5.253 11.732-11.73 11.732-2.008-.002-3.98-.517-5.732-1.496L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.316 0 9.64-4.32 9.643-9.637.002-2.578-1.002-5.001-2.825-6.825C16.467 2.328 14.048 1.326 11.47 1.326 6.155 1.326 1.83 5.645 1.828 10.963c0 1.701.447 3.361 1.295 4.837l-.953 3.477 3.564-.934zm11.332-6.52c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                  </svg>
+                                </a>
+                              );
+                            })() : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+        return isContactsDbFullscreen ? (
+          /* FULLSCREEN VIEW */
+          <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col w-full h-screen overflow-hidden text-slate-800 animate-fade-in">
+            {/* Fullscreen Header */}
+            <div className="bg-slate-900 text-white px-5 sm:px-6 py-3.5 flex items-center justify-between shadow-md shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🗂️</span>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display font-extrabold text-sm sm:text-base tracking-wide uppercase text-white">
+                      Database Contatti Privato
+                    </h3>
+                    <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                      Schermo Intero
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato visibile solo a te
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsContactsDbFullscreen(false)}
+                  className="text-slate-300 hover:text-white px-3 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1.5 border border-slate-700"
+                  title="Riduci a visualizzazione finestra"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Riduci Finestra</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsContactsDbOpen(false);
+                    handleCancelContactEdit();
+                  }}
+                  className="bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white px-3.5 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1.5"
+                  title="Chiudi archivio database"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Chiudi</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Fullscreen Main Workspace */}
+            <div className="flex-1 min-h-0 p-4 lg:p-5 flex flex-col lg:flex-row gap-5 overflow-hidden">
+              {/* Left Column: Form (Width fixed on desktop, full height) */}
+              <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 h-full flex flex-col overflow-hidden">
+                {renderContactForm()}
+              </div>
+
+              {/* Right Column: Fullscreen Table + Filters */}
+              {renderContactsTableAndFilters()}
+            </div>
+          </div>
+        ) : (
+          /* WINDOWED VIEW (if user clicks Riduci Finestra) */
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="bg-white rounded-3xl max-w-7xl w-full shadow-2xl border border-slate-150 overflow-hidden text-slate-800 flex flex-col max-h-[95vh] h-full animate-scale-up">
               
-              {/* Modal Header */}
-              <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              {/* Windowed Header */}
+              <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">🗂️</span>
                   <div className="text-left">
@@ -9905,674 +10932,50 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsContactsDbOpen(false);
-                    handleCancelContactEdit();
-                  }}
-                  className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
-                >
-                  ✕
-                </button>
-              </div>
 
-              {/* Modal Body */}
-              <div className="p-6 overflow-y-auto flex-1 space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  
-                  {/* Left Column: Add / Edit Form */}
-                  <div className="lg:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-3xs text-left">
-                    <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                      {editingContactId ? '✏️ Modifica Contatto' : '➕ Nuovo Contatto'}
-                    </h4>
-                    
-                    <form onSubmit={handleSaveContact} className="space-y-4">
-                      {/* Name */}
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
-                          Nome Contatto *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={newContactName}
-                          onChange={(e) => setNewContactName(e.target.value)}
-                          placeholder="es. Mario Rossi"
-                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
-                        />
-                      </div>
-
-                      {/* Cellulare */}
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
-                          Cellulare (WhatsApp)
-                        </label>
-                        <input
-                          type="tel"
-                          value={newContactPhone}
-                          onChange={(e) => setNewContactPhone(e.target.value)}
-                          placeholder="es. +39 340 123 4567"
-                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
-                        />
-                      </div>
-
-                      {/* Skin Date */}
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
-                          Data Skin
-                        </label>
-                        <input
-                          type="date"
-                          value={newContactSkinDate}
-                          onChange={(e) => setNewContactSkinDate(e.target.value)}
-                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800"
-                        />
-                      </div>
-
-                      {/* Checkboxes Group */}
-                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3.5">
-                        <span className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                          Interesse
-                        </span>
-                        
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
-                            <span>📊</span> Valutazione
-                          </label>
-                          <input
-                            type="checkbox"
-                            checked={newContactEvaluation}
-                            onChange={(e) => setNewContactEvaluation(e.target.checked)}
-                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
-                            <span>ℹ️</span> Info Attività
-                          </label>
-                          <input
-                            type="checkbox"
-                            checked={newContactActivityInfo}
-                            onChange={(e) => setNewContactActivityInfo(e.target.checked)}
-                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
-                            <span>🏃</span> Sport
-                          </label>
-                          <input
-                            type="checkbox"
-                            checked={newContactSport}
-                            onChange={(e) => setNewContactSport(e.target.checked)}
-                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-750 flex items-center gap-2 cursor-pointer select-none">
-                            <span>🎁</span> Tagliando Smartbox
-                          </label>
-                          <input
-                            type="checkbox"
-                            checked={newContactSmartboxTagliando}
-                            onChange={(e) => setNewContactSmartboxTagliando(e.target.checked)}
-                            className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Products */}
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
-                          Prodotti Acquistati
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={newContactProducts}
-                          onChange={(e) => setNewContactProducts(e.target.value)}
-                          placeholder="es. Formula 1, Aloe, Infuso"
-                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
-                        />
-                      </div>
-
-                      {/* Notes */}
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1.5">
-                          Note / Dettagli
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={newContactNotes}
-                          onChange={(e) => setNewContactNotes(e.target.value)}
-                          placeholder="es. Preferenze, prossimi appuntamenti..."
-                          className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-250 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 resize-none"
-                        />
-                      </div>
-
-                      {/* Personal Reminder / Follow-Up Section */}
-                      <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-amber-50/30 p-3.5 rounded-2xl border border-amber-200 shadow-3xs space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-bold text-slate-800 flex items-center gap-2 cursor-pointer select-none">
-                            <span className="text-base">🔔</span>
-                            <span>Imposta Promemoria / Reminder</span>
-                          </label>
-                          <input
-                            type="checkbox"
-                            checked={newContactHasReminder}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setNewContactHasReminder(checked);
-                              if (checked && !newContactReminderDate) {
-                                const d = new Date();
-                                d.setDate(d.getDate() + (newContactReminderDays || 7));
-                                setNewContactReminderDate(d.toISOString().split('T')[0]);
-                              }
-                            }}
-                            className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500 border-amber-300 cursor-pointer"
-                          />
-                        </div>
-
-                        {newContactHasReminder && (
-                          <div className="space-y-3 pt-1 border-t border-amber-200/60 animate-fade-in text-left">
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider">
-                                  Ricevi promemoria tra quanti giorni?
-                                </label>
-                                <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
-                                  {newContactReminderDays} {newContactReminderDays === 1 ? 'giorno' : 'giorni'}
-                                </span>
-                              </div>
-
-                              {/* Preset quick buttons */}
-                              <div className="grid grid-cols-5 gap-1.5 mb-2">
-                                {[3, 7, 14, 21, 30].map((days) => {
-                                  const isSelected = newContactReminderDays === days;
-                                  return (
-                                    <button
-                                      key={days}
-                                      type="button"
-                                      onClick={() => {
-                                        setNewContactReminderDays(days);
-                                        const d = new Date();
-                                        d.setDate(d.getDate() + days);
-                                        setNewContactReminderDate(d.toISOString().split('T')[0]);
-                                      }}
-                                      className={`py-1.5 px-0.5 rounded-xl text-[10px] font-black transition-all cursor-pointer border text-center ${
-                                        isSelected
-                                          ? 'bg-amber-500 text-white border-amber-600 shadow-2xs scale-102'
-                                          : 'bg-white text-slate-700 hover:bg-amber-100/60 border-amber-200'
-                                      }`}
-                                    >
-                                      {days} gg
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {/* Custom Days & Date Preview */}
-                              <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-amber-200">
-                                <div>
-                                  <span className="block text-[9px] font-bold uppercase text-slate-400">Personalizza giorni</span>
-                                  <div className="flex items-center gap-1 mt-0.5">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="365"
-                                      value={newContactReminderDays || ''}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value, 10);
-                                        const days = isNaN(val) ? 0 : val;
-                                        setNewContactReminderDays(days);
-                                        if (days > 0) {
-                                          const d = new Date();
-                                          d.setDate(d.getDate() + days);
-                                          setNewContactReminderDate(d.toISOString().split('T')[0]);
-                                        }
-                                      }}
-                                      placeholder="es. 10"
-                                      className="w-full text-xs font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
-                                    />
-                                    <span className="text-[10px] font-bold text-slate-500">gg</span>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <span className="block text-[9px] font-bold uppercase text-slate-400">Data promemoria</span>
-                                  <input
-                                    type="date"
-                                    value={newContactReminderDate}
-                                    onChange={(e) => {
-                                      const dateStr = e.target.value;
-                                      setNewContactReminderDate(dateStr);
-                                      if (dateStr) {
-                                        const today = new Date();
-                                        today.setHours(0, 0, 0, 0);
-                                        const chosen = new Date(dateStr + 'T00:00:00');
-                                        const diff = Math.round((chosen.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                                        if (diff >= 0) setNewContactReminderDays(diff);
-                                      }
-                                    }}
-                                    className="w-full text-[11px] font-bold p-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono"
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Calculated summary notice */}
-                              {newContactReminderDate && (
-                                <div className="mt-2 text-[10px] font-semibold text-amber-900 bg-amber-100/70 p-2 rounded-xl flex items-center gap-1.5 border border-amber-200">
-                                  <span>📅</span>
-                                  <span>
-                                    Riceverai il promemoria il: <strong>{new Date(newContactReminderDate + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong> ({newContactReminderDays} gg da oggi)
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Reminder note */}
-                            <div>
-                              <label className="block text-[10px] font-bold uppercase text-slate-600 tracking-wider mb-1">
-                                Motivo / Oggetto Promemoria
-                              </label>
-                              <input
-                                type="text"
-                                value={newContactReminderNote}
-                                onChange={(e) => setNewContactReminderNote(e.target.value)}
-                                placeholder="es. Follow-up prodotti e proposta percorso"
-                                className="w-full text-xs font-semibold p-2 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-slate-800"
-                              />
-                              {/* Quick tags */}
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {['Feedback Prodotti', 'Check Risultati', 'Invito Valutazione', 'Invito Trattamento Viso', 'Follow-up Telefonico'].map(suggestion => (
-                                  <button
-                                    key={suggestion}
-                                    type="button"
-                                    onClick={() => setNewContactReminderNote(suggestion)}
-                                    className="text-[9px] font-semibold bg-white hover:bg-amber-100 text-slate-700 px-2 py-0.5 rounded-lg border border-amber-200 transition-colors cursor-pointer"
-                                  >
-                                    + {suggestion}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Buttons */}
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          type="submit"
-                          disabled={isSavingContact}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold py-2.5 rounded-xl transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-                        >
-                          {isSavingContact ? 'Salvataggio...' : (editingContactId ? 'Salva Modifiche' : 'Aggiungi Contatto')}
-                        </button>
-                        {editingContactId && (
-                          <button
-                            type="button"
-                            onClick={handleCancelContactEdit}
-                            className="px-3 bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
-                          >
-                            Annulla
-                          </button>
-                        )}
-                      </div>
-                    </form>
-                  </div>
-
-                  {/* Right Column: Contacts Table List */}
-                  <div className="lg:col-span-8 flex flex-col h-full space-y-3">
-                    
-                    {/* Urgent Reminders Notice Banner */}
-                    {urgentReminders.length > 0 && (
-                      <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-center justify-between gap-3 text-left animate-fade-in shadow-3xs">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xl">🚨</span>
-                          <div>
-                            <h4 className="text-xs font-black text-rose-900">
-                              Hai {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria in scadenza o scaduto' : 'promemoria in scadenza o scaduti'} da gestire oggi!
-                            </h4>
-                            <p className="text-[10px] text-rose-700 font-medium">
-                              Ognuno vede solo i suoi contatti: ricontatta il cliente via WhatsApp o telefono.
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setContactsTabFilter('urgent')}
-                          className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-3xs"
-                        >
-                          Filtra Urgenze ({urgentReminders.length})
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Filter Tabs & Search Bar */}
-                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-150 space-y-2.5">
-                      {/* Tabs Bar */}
-                      <div className="flex flex-wrap gap-1.5 items-center">
-                        <button
-                          type="button"
-                          onClick={() => setContactsTabFilter('all')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                            contactsTabFilter === 'all'
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                          }`}
-                        >
-                          Tutti i contatti ({contacts.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setContactsTabFilter('urgent')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                            contactsTabFilter === 'urgent'
-                              ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
-                              : urgentReminders.length > 0
-                              ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                          }`}
-                        >
-                          <span>⚠️ Da Gestire Oggi / Scaduti</span>
-                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'urgent' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'}`}>
-                            {urgentReminders.length}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setContactsTabFilter('reminders')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                            contactsTabFilter === 'reminders'
-                              ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                          }`}
-                        >
-                          <span>🔔 Tutti i Promemoria</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'reminders' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'}`}>
-                            {coachRemindersList.filter(r => !r.isCompleted).length}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setContactsTabFilter('completed')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                            contactsTabFilter === 'completed'
-                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                              : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                          }`}
-                        >
-                          ✅ Completati ({completedReminders.length})
-                        </button>
-                      </div>
-
-                      {/* Search & Statistics Bar */}
-                      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-1">
-                        <div className="relative w-full sm:max-w-xs text-left">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
-                          <input
-                            type="text"
-                            value={searchContactQuery}
-                            onChange={(e) => setSearchContactQuery(e.target.value)}
-                            placeholder="Cerca per nome, telefono, note o reminder..."
-                            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
-                          />
-                        </div>
-                        <div className="flex gap-4 text-xs font-bold text-slate-500">
-                          <span>Contatti totali: <strong className="text-slate-800">{contacts.length}</strong></span>
-                          <span>•</span>
-                          <span>Visualizzati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Table Container */}
-                    <div className="border border-slate-150 rounded-2xl overflow-hidden bg-white shadow-3xs flex-1 max-h-[50vh] lg:max-h-[55vh] overflow-y-auto">
-                      {filteredContacts.length === 0 ? (
-                        <div className="p-12 text-center text-slate-400 space-y-2">
-                          <span className="text-3xl block">📁</span>
-                          <p className="text-xs font-bold">Nessun contatto trovato nel database.</p>
-                          <p className="text-[10px] text-slate-400">Inizia inserendo un contatto nel modulo a sinistra.</p>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-slate-800 min-w-[700px]">
-                            <thead>
-                              <tr className="bg-slate-100 border-b border-slate-150 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                                <th className="p-3.5 pl-4">Nome Contatto</th>
-                                <th className="p-3.5">Cellulare</th>
-                                <th className="p-3.5">Data Skin</th>
-                                <th className="p-3.5 text-center">🔔 Promemoria</th>
-                                <th className="p-3.5 text-center w-20">Valutazione</th>
-                                <th className="p-3.5 text-center w-20">Info Attività</th>
-                                <th className="p-3.5 text-center w-16">Sport</th>
-                                <th className="p-3.5 text-center w-28">Smartbox</th>
-                                <th className="p-3.5">Prodotti Acquistati</th>
-                                <th className="p-3.5">Note</th>
-                                <th className="p-3.5 text-right pr-4 w-24">Azioni</th>
-                                <th className="p-3.5 text-center w-14 pr-4">WhatsApp</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-xs">
-                              {filteredContacts.map((contact) => (
-                                <tr 
-                                  key={contact.id} 
-                                  className={`hover:bg-slate-50/50 transition-colors ${editingContactId === contact.id ? 'bg-amber-50/40' : ''}`}
-                                >
-                                  <td className="p-3.5 pl-4 font-black text-slate-900">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedContactForDetail(contact)}
-                                      className="hover:text-emerald-600 text-left transition-colors cursor-pointer outline-none focus:underline"
-                                      title="Visualizza dettagli completi"
-                                    >
-                                      {contact.contactName}
-                                    </button>
-                                  </td>
-                                  <td className="p-3.5 font-semibold text-slate-700 font-mono">
-                                    {contact.phone || <span className="text-slate-300 italic">—</span>}
-                                  </td>
-                                  <td className="p-3.5 text-slate-600 font-mono font-medium">
-                                    {contact.skinDate ? new Date(contact.skinDate).toLocaleDateString('it-IT') : '-'}
-                                  </td>
-
-                                  {/* Reminder status cell */}
-                                  <td className="p-3.5 text-center whitespace-nowrap">
-                                    {contact.hasReminder && contact.reminderDate ? (() => {
-                                      const today = new Date();
-                                      today.setHours(0, 0, 0, 0);
-                                      const target = new Date(contact.reminderDate + 'T00:00:00');
-                                      const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                                      const isDone = !!contact.reminderCompleted;
-                                      const isToday = !isDone && diffDays === 0;
-                                      const isOverdue = !isDone && diffDays < 0;
-
-                                      if (isDone) {
-                                        return (
-                                          <span 
-                                            className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
-                                            title={contact.reminderNote || 'Promemoria completato'}
-                                          >
-                                            ✓ Fatto
-                                          </span>
-                                        );
-                                      }
-
-                                      if (isToday) {
-                                        return (
-                                          <div className="inline-flex items-center gap-1">
-                                            <span 
-                                              className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-3xs"
-                                              title={`OGGI: ${contact.reminderNote || 'Follow-up'}`}
-                                            >
-                                              🔔 Oggi!
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => handlePatchReminder(contact.id, { completed: true })}
-                                              className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
-                                              title="Segna come completato"
-                                            >
-                                              ✓
-                                            </button>
-                                          </div>
-                                        );
-                                      }
-
-                                      if (isOverdue) {
-                                        return (
-                                          <div className="inline-flex items-center gap-1">
-                                            <span 
-                                              className="inline-flex items-center gap-1 bg-rose-100 text-rose-900 border border-rose-300 text-[10px] font-black px-2 py-0.5 rounded-full shadow-3xs"
-                                              title={`Scaduto da ${Math.abs(diffDays)} giorni: ${contact.reminderNote || ''}`}
-                                            >
-                                              ⚠️ {Math.abs(diffDays)} gg fa
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => handlePatchReminder(contact.id, { completed: true })}
-                                              className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded transition-colors text-xs font-black cursor-pointer"
-                                              title="Segna come completato"
-                                            >
-                                              ✓
-                                            </button>
-                                          </div>
-                                        );
-                                      }
-
-                                      return (
-                                        <span 
-                                          className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-full"
-                                          title={`Previsto per il ${new Date(contact.reminderDate).toLocaleDateString('it-IT')}: ${contact.reminderNote || ''}`}
-                                        >
-                                          ⏰ Tra {diffDays} gg
-                                        </span>
-                                      );
-                                    })() : (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setQuickReminderContact(contact);
-                                          setQuickReminderDays(7);
-                                          const d = new Date();
-                                          d.setDate(d.getDate() + 7);
-                                          setQuickReminderDate(d.toISOString().split('T')[0]);
-                                          setQuickReminderNote('Follow-up contatto');
-                                        }}
-                                        className="text-[10px] font-bold text-slate-400 hover:text-amber-700 hover:bg-amber-50 px-2 py-0.5 rounded-lg border border-dashed border-slate-300 hover:border-amber-300 transition-all cursor-pointer"
-                                        title="Imposta promemoria dopo determinati giorni"
-                                      >
-                                        + Promemoria
-                                      </button>
-                                    )}
-                                  </td>
-                                  
-                                  {/* Checkboxes Displays: only show checkmarks */}
-                                  <td className="p-3.5 text-center">
-                                    {contact.evaluation ? (
-                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-200">—</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3.5 text-center">
-                                    {contact.activityInfo ? (
-                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-200">—</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3.5 text-center">
-                                    {contact.sport ? (
-                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-200">—</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3.5 text-center">
-                                    {contact.smartboxTagliando ? (
-                                      <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-800 font-black text-xs px-2 py-0.5 rounded-full border border-emerald-200">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-200">—</span>
-                                    )}
-                                  </td>
-
-                                  <td className="p-3.5 text-slate-600 max-w-[150px] truncate font-medium" title={contact.productsPurchased}>
-                                    {contact.productsPurchased || <span className="text-slate-300 italic">nessuno</span>}
-                                  </td>
-                                  <td className="p-3.5 text-slate-600 max-w-[180px] truncate font-medium" title={contact.notes}>
-                                    {contact.notes || <span className="text-slate-300">—</span>}
-                                  </td>
-                                  <td className="p-3.5 text-right pr-4 space-x-2">
-                                    <button
-                                      onClick={() => handleEditContactClick(contact)}
-                                      className="text-slate-400 hover:text-amber-600 font-bold transition-colors cursor-pointer text-[11px]"
-                                      title="Modifica contatto"
-                                    >
-                                      ✏️
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteContact(contact.id)}
-                                      className="text-slate-400 hover:text-red-600 font-bold transition-colors cursor-pointer text-[11px]"
-                                      title="Elimina contatto"
-                                    >
-                                      🗑️
-                                    </button>
-                                  </td>
-                                  <td className="p-3.5 text-center pr-4">
-                                    {contact.phone ? (() => {
-                                      const cleaned = String(contact.phone).replace(/\D/g, '');
-                                      const formatted = (cleaned.length === 10 && cleaned.startsWith('3')) ? '39' + cleaned : cleaned;
-                                      return (
-                                        <a
-                                          href={`https://wa.me/${formatted}`}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 hover:bg-emerald-100 transition-colors"
-                                          title="Apri chat WhatsApp"
-                                        >
-                                          <svg className="w-4.5 h-4.5 fill-emerald-600" viewBox="0 0 24 24">
-                                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.062 5.248 5.311 0 11.786 0c3.137.001 6.086 1.222 8.303 3.442 2.218 2.22 3.437 5.17 3.437 8.307-.005 6.486-5.253 11.732-11.73 11.732-2.008-.002-3.98-.517-5.732-1.496L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.316 0 9.64-4.32 9.643-9.637.002-2.578-1.002-5.001-2.825-6.825C16.467 2.328 14.048 1.326 11.47 1.326 6.155 1.326 1.83 5.645 1.828 10.963c0 1.701.447 3.361 1.295 4.837l-.953 3.477 3.564-.934zm11.332-6.52c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-                                          </svg>
-                                        </a>
-                                      );
-                                    })() : (
-                                      <span className="text-slate-200">—</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsContactsDbFullscreen(true)}
+                    className="text-slate-300 hover:text-white px-3 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1.5 border border-slate-700"
+                    title="Espandi a schermo intero"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Schermo Intero</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContactsDbOpen(false);
+                      handleCancelContactEdit();
+                    }}
+                    className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end">
+              {/* Windowed Body */}
+              <div className="p-4 sm:p-5 overflow-hidden flex-1 flex flex-col lg:flex-row gap-5 min-h-0 bg-slate-100/50">
+                <div className="w-full lg:w-[360px] shrink-0 h-full flex flex-col overflow-hidden">
+                  {renderContactForm()}
+                </div>
+                {renderContactsTableAndFilters()}
+              </div>
+
+              {/* Windowed Footer */}
+              <div className="bg-slate-50 p-3 sm:p-4 border-t border-slate-100 flex justify-between items-center shrink-0">
+                <span className="text-xs text-slate-500 font-medium">
+                  Contatti visualizzati: <strong className="text-slate-800">{filteredContacts.length}</strong> su <strong>{contacts.length}</strong>
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     setIsContactsDbOpen(false);
                     handleCancelContactEdit();
                   }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition-all cursor-pointer"
                 >
                   Chiudi Archivio
                 </button>
