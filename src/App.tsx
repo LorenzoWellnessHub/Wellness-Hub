@@ -41,7 +41,9 @@ import {
   Upload,
   Maximize2,
   Minimize2,
-  RotateCcw
+  RotateCcw,
+  Filter,
+  Search
 } from 'lucide-react';
 import { Coach, Slot, SlotSummary, Booking, ComputedBooking, TreatmentType, Member, PaymentRequest, EventItem, AppNotification, UtilityItem, OperatorEarning, MonthlyCheque, Contact, ShakePartyConfig, HomConfig } from './types';
 import PublicClientBooking from './components/PublicClientBooking';
@@ -185,6 +187,8 @@ export default function App() {
   const [isContactsDbFullscreen, setIsContactsDbFullscreen] = useState<boolean>(true);
   const [mobileContactsTab, setMobileContactsTab] = useState<'list' | 'form'>('list');
   const [contactsViewMode, setContactsViewMode] = useState<'cards' | 'table'>('cards');
+  const [isContactsFilterModalOpen, setIsContactsFilterModalOpen] = useState<boolean>(false);
+  const [isUrgentBannerDismissed, setIsUrgentBannerDismissed] = useState<boolean>(false);
   const [isRemindersDrawerOpen, setIsRemindersDrawerOpen] = useState<boolean>(false);
   const [quickReminderContact, setQuickReminderContact] = useState<Contact | null>(null);
   const [quickReminderDays, setQuickReminderDays] = useState<number>(7);
@@ -9994,7 +9998,21 @@ export default function App() {
           ? 'Senza data' 
           : availableSkinMonthsList.find(m => m.ymKey === selectedSkinMonthFilter)?.label || selectedSkinMonthFilter;
 
+        const activeInterestLabel = 
+          selectedInterestFilter === 'evaluation' ? 'Valutazione' :
+          selectedInterestFilter === 'activityInfo' ? 'Info Attività' :
+          selectedInterestFilter === 'sport' ? 'Sport' :
+          selectedInterestFilter === 'smartboxTagliando' ? 'Tagliando Smartbox' :
+          selectedInterestFilter === 'has_any' ? 'Almeno un interesse' : 
+          selectedInterestFilter === 'none' ? 'Nessun interesse' : '';
+
         const hasActiveFilters = selectedSkinMonthFilter !== 'all' || selectedInterestFilter !== 'all' || searchContactQuery.trim() !== '' || contactsTabFilter !== 'all';
+
+        const activeFiltersCount = 
+          (selectedSkinMonthFilter !== 'all' ? 1 : 0) + 
+          (selectedInterestFilter !== 'all' ? 1 : 0) + 
+          (contactsTabFilter !== 'all' ? 1 : 0) + 
+          (searchContactQuery.trim() !== '' ? 1 : 0);
 
         // Content of the form
         const renderContactForm = () => (
@@ -10341,166 +10359,88 @@ export default function App() {
               </button>
             </div>
 
-            {/* Urgent Reminders Notice Banner */}
-            {urgentReminders.length > 0 && (
-              <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-center justify-between gap-3 text-left animate-fade-in shadow-3xs mb-3 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xl">🚨</span>
-                  <div>
-                    <h4 className="text-xs font-black text-rose-900">
-                      Hai {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria in scadenza o scaduto' : 'promemoria in scadenza o scaduti'} da gestire oggi!
-                    </h4>
-                    <p className="text-[10px] text-rose-700 font-medium">
-                      Ognuno vede solo i suoi contatti: ricontatta il cliente via WhatsApp o telefono.
-                    </p>
-                  </div>
+            {/* Urgent Reminders Notice Banner (Compact & Dismissable) */}
+            {urgentReminders.length > 0 && !isUrgentBannerDismissed && (
+              <div className="bg-rose-50 border border-rose-200/90 px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 text-left mb-2 shrink-0 animate-fade-in shadow-3xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm shrink-0">🚨</span>
+                  <span className="text-xs font-black text-rose-900 truncate">
+                    {urgentReminders.length} {urgentReminders.length === 1 ? 'promemoria in scadenza oggi' : 'promemoria in scadenza oggi'}!
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setContactsTabFilter('urgent')}
-                  className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-3xs"
-                >
-                  Filtra Urgenze ({urgentReminders.length})
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setContactsTabFilter('urgent')}
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-extrabold px-2.5 py-1 rounded-lg transition-all cursor-pointer shadow-3xs"
+                  >
+                    Filtra Urgenze
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsUrgentBannerDismissed(true)}
+                    className="text-rose-400 hover:text-rose-700 p-1 rounded-md cursor-pointer text-xs"
+                    title="Nascondi avviso"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Filter Tabs & Search Controls */}
-            <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 space-y-3 shrink-0">
-              {/* Tabs Bar */}
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <button
-                  type="button"
-                  onClick={() => setContactsTabFilter('all')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                    contactsTabFilter === 'all'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                  }`}
-                >
-                  Tutti i contatti ({contacts.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactsTabFilter('urgent')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                    contactsTabFilter === 'urgent'
-                      ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
-                      : urgentReminders.length > 0
-                      ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                  }`}
-                >
-                  <span>⚠️ Da Gestire Oggi / Scaduti</span>
-                  <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'urgent' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'}`}>
-                    {urgentReminders.length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactsTabFilter('reminders')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                    contactsTabFilter === 'reminders'
-                      ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                  }`}
-                >
-                  <span>🔔 Tutti i Promemoria</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${contactsTabFilter === 'reminders' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'}`}>
-                    {coachRemindersList.filter(r => !r.isCompleted).length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactsTabFilter('completed')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                    contactsTabFilter === 'completed'
-                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                  }`}
-                >
-                  ✅ Completati ({completedReminders.length})
-                </button>
-              </div>
-
-              {/* Main Filters Grid: Search, Mese Trattamento Dropdown, Spunta Interesse Dropdown */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end pt-1">
-                {/* Search Bar */}
-                <div className="md:col-span-5 relative text-left">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1">
-                    🔍 Cerca Contatto
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+            {/* COMPACT TOP TOOLBAR: Sleek, Space-Saving Bar with Openable Filter Window */}
+            <div className="bg-slate-50 p-2 sm:p-2.5 rounded-2xl border border-slate-200/90 shrink-0 space-y-1.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                {/* Left: Compact Quick Search & Finestrella Filtri Trigger */}
+                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                  {/* Quick Search Input */}
+                  <div className="relative flex-1 max-w-xs">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">
+                      🔍
+                    </span>
                     <input
                       type="text"
                       value={searchContactQuery}
                       onChange={(e) => setSearchContactQuery(e.target.value)}
-                      placeholder="Cerca per nome, cellulare, prodotti, note..."
-                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 shadow-3xs"
+                      placeholder="Cerca contatto..."
+                      className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 shadow-3xs placeholder:text-slate-400"
                     />
+                    {searchContactQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchContactQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs font-bold p-0.5 cursor-pointer"
+                        title="Cancella ricerca"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                </div>
 
-                {/* Dropdown 1: Mese in cui hanno effettuato il trattamento */}
-                <div className="md:col-span-3 text-left">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <span>📅</span> Mese Trattamento
-                    </span>
-                    {selectedSkinMonthFilter !== 'all' && (
-                      <span className="text-[9px] font-extrabold text-emerald-600 lowercase bg-emerald-50 px-1 rounded">
-                        attivo
+                  {/* Pulsante Finestrella Filtri Apribile */}
+                  <button
+                    type="button"
+                    onClick={() => setIsContactsFilterModalOpen(true)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 border shadow-3xs ${
+                      hasActiveFilters
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 ring-2 ring-emerald-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-250'
+                    }`}
+                    title="Apri finestra filtri (mese trattamento, spunte d'interesse, promemoria)"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Filtri</span>
+                    {activeFiltersCount > 0 && (
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+                        hasActiveFilters ? 'bg-white text-emerald-800' : 'bg-emerald-600 text-white'
+                      }`}>
+                        {activeFiltersCount}
                       </span>
                     )}
-                  </label>
-                  <select
-                    value={selectedSkinMonthFilter}
-                    onChange={(e) => setSelectedSkinMonthFilter(e.target.value)}
-                    className="w-full text-xs font-bold py-2 px-2.5 bg-white border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs truncate"
-                  >
-                    <option value="all">Tutti i mesi ({contacts.length})</option>
-                    {availableSkinMonthsList.map(m => (
-                      <option key={m.ymKey} value={m.ymKey}>
-                        {m.label} ({m.count} {m.count === 1 ? 'cliente' : 'clienti'})
-                      </option>
-                    ))}
-                    {withoutDateCount > 0 && (
-                      <option value="none">Senza data ({withoutDateCount})</option>
-                    )}
-                  </select>
-                </div>
+                  </button>
 
-                {/* Dropdown 2: Spunta di interesse messa */}
-                <div className="md:col-span-3 text-left">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <span>🎯</span> Spunta Interesse
-                    </span>
-                    {selectedInterestFilter !== 'all' && (
-                      <span className="text-[9px] font-extrabold text-purple-600 lowercase bg-purple-50 px-1 rounded">
-                        attivo
-                      </span>
-                    )}
-                  </label>
-                  <select
-                    value={selectedInterestFilter}
-                    onChange={(e) => setSelectedInterestFilter(e.target.value)}
-                    className="w-full text-xs font-bold py-2 px-2.5 bg-white border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs truncate"
-                  >
-                    <option value="all">Tutti gli interessi ({contacts.length})</option>
-                    <option value="evaluation">📊 Valutazione ({evaluationCount})</option>
-                    <option value="activityInfo">ℹ️ Info Attività ({activityInfoCount})</option>
-                    <option value="sport">🏃 Sport ({sportCount})</option>
-                    <option value="smartboxTagliando">🎁 Tagliando Smartbox ({smartboxCount})</option>
-                    <option value="has_any">⭐ Almeno un interesse ({hasAnyInterestCount})</option>
-                    <option value="none">⚪ Nessun interesse ({noneInterestCount})</option>
-                  </select>
-                </div>
-
-                {/* Reset Filters Button */}
-                <div className="md:col-span-1 flex justify-end">
-                  {hasActiveFilters ? (
+                  {/* Quick Reset Button if active */}
+                  {hasActiveFilters && (
                     <button
                       type="button"
                       onClick={() => {
@@ -10509,84 +10449,28 @@ export default function App() {
                         setSearchContactQuery('');
                         setContactsTabFilter('all');
                       }}
-                      className="w-full h-[37px] bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-3xs"
+                      className="px-2 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
                       title="Azzera tutti i filtri"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span className="md:hidden lg:inline text-[10px]">Azzera</span>
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="hidden sm:inline text-[11px]">Azzera</span>
                     </button>
-                  ) : (
-                    <div className="h-[37px] flex items-center justify-center text-[10px] text-slate-400 font-bold px-2">
-                      Filtri
-                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* Quick Interest Filter Chips & Counters */}
-              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">
-                    Filtro:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'evaluation' ? 'all' : 'evaluation')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
-                      selectedInterestFilter === 'evaluation'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                    }`}
-                  >
-                    <span>📊</span> Valutazione ({evaluationCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'activityInfo' ? 'all' : 'activityInfo')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
-                      selectedInterestFilter === 'activityInfo'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                    }`}
-                  >
-                    <span>ℹ️</span> Attività ({activityInfoCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'sport' ? 'all' : 'sport')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
-                      selectedInterestFilter === 'sport'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                    }`}
-                  >
-                    <span>🏃</span> Sport ({sportCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'smartboxTagliando' ? 'all' : 'smartboxTagliando')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
-                      selectedInterestFilter === 'smartboxTagliando'
-                        ? 'bg-purple-600 text-white border-purple-700 shadow-3xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
-                    }`}
-                  >
-                    <span>🎁</span> Smartbox ({smartboxCount})
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                {/* Right: View Mode Switcher & Contacts Counter */}
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
                   {/* View Mode Switcher (Cards vs Table) */}
                   <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/50">
                     <button
                       type="button"
                       onClick={() => setContactsViewMode('cards')}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
                         contactsViewMode === 'cards'
                           ? 'bg-white text-slate-900 shadow-3xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
-                      title="Vista a schede touch (ottimizzata per cellulare)"
+                      title="Vista a schede touch"
                     >
                       <span>📱</span>
                       <span className="hidden xs:inline">Schede</span>
@@ -10594,7 +10478,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setContactsViewMode('table')}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
                         contactsViewMode === 'table'
                           ? 'bg-white text-slate-900 shadow-3xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -10606,66 +10490,405 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-500">
-                    <span>{filteredContacts.length} di {contacts.length}</span>
+                  <div className="text-[11px] font-black text-slate-600 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shrink-0">
+                    <span>{filteredContacts.length}</span>
+                    <span className="text-slate-400 font-semibold"> / {contacts.length}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Active Filter Badges summary */}
+              {/* Active Filter Badges summary (slim single line, only visible if filters are active) */}
               {hasActiveFilters && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px]">
-                  <span className="font-bold text-slate-400">Filtri applicati:</span>
-                  {selectedSkinMonthFilter !== 'all' && (
-                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md px-2 py-0.5 font-bold">
-                      <span>Mese: {activeMonthLabel}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => setSelectedSkinMonthFilter('all')}
-                        className="hover:text-emerald-950 font-black cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  )}
-                  {selectedInterestFilter !== 'all' && (
-                    <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-md px-2 py-0.5 font-bold">
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200/60 text-[10px]">
+                  <span className="font-black uppercase text-slate-400 tracking-wider text-[9px] mr-0.5">
+                    Filtri attivi:
+                  </span>
+
+                  {contactsTabFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg px-2 py-0.5 font-bold">
                       <span>
-                        Interesse: {
-                          selectedInterestFilter === 'evaluation' ? 'Valutazione' :
-                          selectedInterestFilter === 'activityInfo' ? 'Info Attività' :
-                          selectedInterestFilter === 'sport' ? 'Sport' :
-                          selectedInterestFilter === 'smartboxTagliando' ? 'Tagliando Smartbox' :
-                          selectedInterestFilter === 'has_any' ? 'Almeno un interesse' : 'Nessun interesse'
-                        }
+                        {contactsTabFilter === 'urgent' ? '⚠️ Urgenze' :
+                         contactsTabFilter === 'reminders' ? '🔔 Con Promemoria' : '✅ Completati'}
                       </span>
                       <button 
                         type="button" 
-                        onClick={() => setSelectedInterestFilter('all')}
-                        className="hover:text-purple-950 font-black cursor-pointer"
+                        onClick={() => setContactsTabFilter('all')}
+                        className="hover:text-amber-950 font-black cursor-pointer text-xs ml-0.5"
                       >
                         ✕
                       </button>
                     </span>
                   )}
+
+                  {selectedSkinMonthFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg px-2 py-0.5 font-bold">
+                      <span>📅 Mese: {activeMonthLabel}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedSkinMonthFilter('all')}
+                        className="hover:text-emerald-950 font-black cursor-pointer text-xs ml-0.5"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+
+                  {selectedInterestFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg px-2 py-0.5 font-bold">
+                      <span>🎯 {activeInterestLabel}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedInterestFilter('all')}
+                        className="hover:text-purple-950 font-black cursor-pointer text-xs ml-0.5"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+
                   {searchContactQuery.trim() !== '' && (
-                    <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 rounded-md px-2 py-0.5 font-bold">
-                      <span>Cerca: &quot;{searchContactQuery}&quot;</span>
+                    <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-800 border border-sky-200 rounded-lg px-2 py-0.5 font-bold">
+                      <span>🔍 &quot;{searchContactQuery}&quot;</span>
                       <button 
                         type="button" 
                         onClick={() => setSearchContactQuery('')}
-                        className="hover:text-sky-950 font-black cursor-pointer"
+                        className="hover:text-sky-950 font-black cursor-pointer text-xs ml-0.5"
                       >
                         ✕
                       </button>
                     </span>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSkinMonthFilter('all');
+                      setSelectedInterestFilter('all');
+                      setSearchContactQuery('');
+                      setContactsTabFilter('all');
+                    }}
+                    className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold hover:underline cursor-pointer ml-1"
+                  >
+                    Azzera tutto
+                  </button>
                 </div>
               )}
             </div>
 
+            {/* FINESTRELLA FILTRI APRIBILE (Modal Popup) */}
+            {isContactsFilterModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+                {/* Backdrop click to close */}
+                <div 
+                  className="absolute inset-0"
+                  onClick={() => setIsContactsFilterModalOpen(false)}
+                />
+                
+                {/* Finestrella Container */}
+                <div className="relative bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200/90 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-up z-10 text-left">
+                  {/* Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/80">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-3xs">
+                        <SlidersHorizontal className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-slate-900">
+                          Filtri e Ricerca Contatti
+                        </h3>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Scegli i parametri per filtrare l'archivio contatti
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setIsContactsFilterModalOpen(false)}
+                      className="w-8 h-8 rounded-xl bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-800 border border-slate-200 flex items-center justify-center cursor-pointer transition-colors shadow-3xs"
+                      title="Chiudi finestrella filtri"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Body: Scrollable */}
+                  <div className="p-4 sm:p-5 overflow-y-auto space-y-4 sm:space-y-5 text-left">
+                    {/* Sezione 1: Ricerca Testo */}
+                    <div>
+                      <label className="block text-xs font-black uppercase text-slate-600 tracking-wider mb-1.5">
+                        🔍 Cerca per Nome, Cellulare o Note
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                        <input
+                          type="text"
+                          value={searchContactQuery}
+                          onChange={(e) => setSearchContactQuery(e.target.value)}
+                          placeholder="Digita per cercare un contatto..."
+                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-250 rounded-xl text-xs font-semibold outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 text-slate-800"
+                        />
+                        {searchContactQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchContactQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs font-bold p-1 cursor-pointer"
+                            title="Svuota campo di ricerca"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Sezione 2: Categoria Promemoria */}
+                    <div>
+                      <label className="block text-xs font-black uppercase text-slate-600 tracking-wider mb-1.5">
+                        📋 Stato Promemoria & Follow-up
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('all')}
+                          className={`p-2.5 rounded-xl text-xs font-bold text-left border transition-all cursor-pointer flex items-center justify-between ${
+                            contactsTabFilter === 'all'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>Tutti i contatti</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                            contactsTabFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {contacts.length}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('urgent')}
+                          className={`p-2.5 rounded-xl text-xs font-bold text-left border transition-all cursor-pointer flex items-center justify-between ${
+                            contactsTabFilter === 'urgent'
+                              ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                              : urgentReminders.length > 0
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span className="truncate">⚠️ Da Gestire Oggi</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black shrink-0 ${
+                            contactsTabFilter === 'urgent' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
+                          }`}>
+                            {urgentReminders.length}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('reminders')}
+                          className={`p-2.5 rounded-xl text-xs font-bold text-left border transition-all cursor-pointer flex items-center justify-between ${
+                            contactsTabFilter === 'reminders'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span className="truncate">🔔 Con Promemoria</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black shrink-0 ${
+                            contactsTabFilter === 'reminders' ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {coachRemindersList.filter(r => !r.isCompleted).length}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setContactsTabFilter('completed')}
+                          className={`p-2.5 rounded-xl text-xs font-bold text-left border transition-all cursor-pointer flex items-center justify-between ${
+                            contactsTabFilter === 'completed'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span className="truncate">✅ Completati</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black shrink-0 ${
+                            contactsTabFilter === 'completed' ? 'bg-white text-emerald-700' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {completedReminders.length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sezione 3: Mese Trattamento Dropdown */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-black uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
+                          <span>📅</span> Mese in cui hanno effettuato il trattamento
+                        </label>
+                        {selectedSkinMonthFilter !== 'all' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSkinMonthFilter('all')}
+                            className="text-[10px] text-emerald-600 font-bold hover:underline cursor-pointer"
+                          >
+                            Tutti i mesi
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        value={selectedSkinMonthFilter}
+                        onChange={(e) => setSelectedSkinMonthFilter(e.target.value)}
+                        className="w-full text-xs font-bold py-2.5 px-3 bg-slate-50 border border-slate-250 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs"
+                      >
+                        <option value="all">📅 Tutti i mesi ({contacts.length} clienti)</option>
+                        {availableSkinMonthsList.map(m => (
+                          <option key={m.ymKey} value={m.ymKey}>
+                            {m.label} ({m.count} {m.count === 1 ? 'cliente' : 'clienti'})
+                          </option>
+                        ))}
+                        {withoutDateCount > 0 && (
+                          <option value="none">Senza data trattamento ({withoutDateCount})</option>
+                        )}
+                      </select>
+                    </div>
+
+                    {/* Sezione 4: Spunta di Interesse */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-black uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
+                          <span>🎯</span> Spunta di Interesse
+                        </label>
+                        {selectedInterestFilter !== 'all' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInterestFilter('all')}
+                            className="text-[10px] text-purple-600 font-bold hover:underline cursor-pointer"
+                          >
+                            Tutti gli interessi
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown Principale */}
+                      <select
+                        value={selectedInterestFilter}
+                        onChange={(e) => setSelectedInterestFilter(e.target.value)}
+                        className="w-full text-xs font-bold py-2.5 px-3 bg-slate-50 border border-slate-250 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 text-slate-800 cursor-pointer shadow-3xs mb-2.5"
+                      >
+                        <option value="all">Tutti gli interessi ({contacts.length})</option>
+                        <option value="evaluation">📊 Valutazione ({evaluationCount})</option>
+                        <option value="activityInfo">ℹ️ Info Attività ({activityInfoCount})</option>
+                        <option value="sport">🏃 Sport ({sportCount})</option>
+                        <option value="smartboxTagliando">🎁 Tagliando Smartbox ({smartboxCount})</option>
+                        <option value="has_any">⭐ Almeno un interesse spuntato ({hasAnyInterestCount})</option>
+                        <option value="none">⚪ Nessun interesse specificato ({noneInterestCount})</option>
+                      </select>
+
+                      {/* Bottoni Rapidi a Griglia per Selezione Immediata */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'evaluation' ? 'all' : 'evaluation')}
+                          className={`p-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-between ${
+                            selectedInterestFilter === 'evaluation'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>📊 Valutazione</span>
+                          <span className="text-[10px] font-black">{evaluationCount}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'activityInfo' ? 'all' : 'activityInfo')}
+                          className={`p-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-between ${
+                            selectedInterestFilter === 'activityInfo'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>ℹ️ Attività</span>
+                          <span className="text-[10px] font-black">{activityInfoCount}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'sport' ? 'all' : 'sport')}
+                          className={`p-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-between ${
+                            selectedInterestFilter === 'sport'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>🏃 Sport</span>
+                          <span className="text-[10px] font-black">{sportCount}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'smartboxTagliando' ? 'all' : 'smartboxTagliando')}
+                          className={`p-2 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-between ${
+                            selectedInterestFilter === 'smartboxTagliando'
+                              ? 'bg-purple-600 text-white border-purple-700 shadow-3xs'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>🎁 Smartbox</span>
+                          <span className="text-[10px] font-black">{smartboxCount}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Riepilogo Risultati */}
+                    <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-950">
+                        <span>👥 Risultati:</span>
+                        <span>{filteredContacts.length} contatti trovati</span>
+                        <span className="text-emerald-700/80 font-normal">su {contacts.length} totali</span>
+                      </div>
+                      {hasActiveFilters && (
+                        <span className="text-[10px] font-black uppercase text-emerald-800 bg-white border border-emerald-300 px-2 py-0.5 rounded-full shadow-3xs">
+                          {activeFiltersCount} {activeFiltersCount === 1 ? 'Filtro Attivo' : 'Filtri Attivi'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Window Footer */}
+                  <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between gap-2 shrink-0">
+                    {hasActiveFilters ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSkinMonthFilter('all');
+                          setSelectedInterestFilter('all');
+                          setSearchContactQuery('');
+                          setContactsTabFilter('all');
+                        }}
+                        className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Azzera Filtri</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 font-semibold px-2">
+                        Tutti i contatti visualizzati
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsContactsFilterModalOpen(false)}
+                      className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-slate-900 hover:bg-slate-800 shadow-md transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Mostra {filteredContacts.length} Contatti</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Table Container */}
-            <div className="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-3xs flex-1 min-h-0 overflow-y-auto mt-3">
+            <div className="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-3xs flex-1 min-h-0 overflow-y-auto mt-2">
               {filteredContacts.length === 0 ? (
                 <div className="p-12 text-center text-slate-400 space-y-3">
                   <span className="text-4xl block">📁</span>
@@ -10674,19 +10897,29 @@ export default function App() {
                     {hasActiveFilters ? 'Prova a modificare o azzerare i filtri per visualizzare più contatti.' : 'Inizia inserendo un contatto nel modulo a sinistra.'}
                   </p>
                   {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSkinMonthFilter('all');
-                        setSelectedInterestFilter('all');
-                        setSearchContactQuery('');
-                        setContactsTabFilter('all');
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Azzera Filtri
-                    </button>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsContactsFilterModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all cursor-pointer shadow-3xs"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        Modifica Filtri
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSkinMonthFilter('all');
+                          setSelectedInterestFilter('all');
+                          setSearchContactQuery('');
+                          setContactsTabFilter('all');
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer shadow-3xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Azzera Filtri
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
