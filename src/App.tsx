@@ -183,6 +183,8 @@ export default function App() {
   const [selectedSkinMonthFilter, setSelectedSkinMonthFilter] = useState<string>('all');
   const [selectedInterestFilter, setSelectedInterestFilter] = useState<string>('all');
   const [isContactsDbFullscreen, setIsContactsDbFullscreen] = useState<boolean>(true);
+  const [mobileContactsTab, setMobileContactsTab] = useState<'list' | 'form'>('list');
+  const [contactsViewMode, setContactsViewMode] = useState<'cards' | 'table'>('cards');
   const [isRemindersDrawerOpen, setIsRemindersDrawerOpen] = useState<boolean>(false);
   const [quickReminderContact, setQuickReminderContact] = useState<Contact | null>(null);
   const [quickReminderDays, setQuickReminderDays] = useState<number>(7);
@@ -1832,6 +1834,7 @@ export default function App() {
         setNewContactReminderDate(nextWeek.toISOString().split('T')[0]);
         setNewContactReminderNote('Follow-up contatto e feedback');
         setEditingContactId(null);
+        setMobileContactsTab('list');
         
         setSuccessMessage(editingContactId ? 'Contatto aggiornato con successo!' : 'Contatto aggiunto con successo!');
         setTimeout(() => setSuccessMessage(''), 3000);
@@ -1863,6 +1866,7 @@ export default function App() {
 
   const handleEditContactClick = (contact: Contact) => {
     setEditingContactId(contact.id);
+    setMobileContactsTab('form');
     setNewContactName(contact.contactName);
     setNewContactPhone(contact.phone || '');
     setNewContactSkinDate(contact.skinDate);
@@ -1886,6 +1890,7 @@ export default function App() {
 
   const handleCancelContactEdit = () => {
     setEditingContactId(null);
+    setMobileContactsTab('list');
     setNewContactName('');
     setNewContactPhone('');
     setNewContactSkinDate(new Date().toISOString().split('T')[0]);
@@ -3751,6 +3756,7 @@ export default function App() {
                               alert('Seleziona un profilo operatore prima di accedere al Database Contatti.');
                             } else {
                               setIsContactsDbFullscreen(true);
+                              setMobileContactsTab('list');
                               setIsContactsDbOpen(true);
                             }
                             setIsUtilityDropdownOpen(false);
@@ -9992,19 +9998,37 @@ export default function App() {
 
         // Content of the form
         const renderContactForm = () => (
-          <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-3xs text-left h-full flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between mb-3 shrink-0">
-              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                {editingContactId ? '✏️ Modifica Contatto' : '➕ Nuovo Contatto'}
-              </h4>
-              {editingContactId && (
+          <div className="bg-slate-50 p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-3xs text-left h-full flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between mb-3 shrink-0 pb-2 border-b border-slate-200/80">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCancelContactEdit();
+                    setMobileContactsTab('list');
+                  }}
+                  className="lg:hidden px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl transition-colors cursor-pointer text-xs font-extrabold flex items-center gap-1 shadow-3xs"
+                  title="Torna all'elenco contatti"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Elenco</span>
+                </button>
+                <h4 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  {editingContactId ? '✏️ Modifica Contatto' : '➕ Nuovo Contatto'}
+                </h4>
+              </div>
+              {editingContactId ? (
                 <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
                   In Modifica
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full hidden sm:inline">
+                  Nuova Scheda
                 </span>
               )}
             </div>
             
-            <form onSubmit={handleSaveContact} className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3.5">
+            <form onSubmit={handleSaveContact} className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 space-y-3.5 touch-pan-y">
               {/* Name */}
               <div>
                 <label className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
@@ -10292,7 +10316,31 @@ export default function App() {
 
         // Content of right column: Table & Controls
         const renderContactsTableAndFilters = () => (
-          <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full overflow-hidden p-4 sm:p-5">
+          <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full overflow-hidden p-3 sm:p-5">
+            {/* Mobile Top Navigation & Quick Add */}
+            <div className="lg:hidden flex items-center justify-between gap-2 pb-2.5 mb-2 border-b border-slate-200/80 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                  📋 Archivio Contatti
+                </span>
+                <span className="text-[10px] font-black bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-full">
+                  {filteredContacts.length}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleCancelContactEdit();
+                  setMobileContactsTab('form');
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nuovo Contatto</span>
+              </button>
+            </div>
+
             {/* Urgent Reminders Notice Banner */}
             {urgentReminders.length > 0 && (
               <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-center justify-between gap-3 text-left animate-fade-in shadow-3xs mb-3 shrink-0">
@@ -10476,15 +10524,15 @@ export default function App() {
               </div>
 
               {/* Quick Interest Filter Chips & Counters */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">
-                    Filtro Rapido:
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">
+                    Filtro:
                   </span>
                   <button
                     type="button"
                     onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'evaluation' ? 'all' : 'evaluation')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
                       selectedInterestFilter === 'evaluation'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
                         : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
@@ -10495,18 +10543,18 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'activityInfo' ? 'all' : 'activityInfo')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
                       selectedInterestFilter === 'activityInfo'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
                         : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
                     }`}
                   >
-                    <span>ℹ️</span> Info Attività ({activityInfoCount})
+                    <span>ℹ️</span> Attività ({activityInfoCount})
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'sport' ? 'all' : 'sport')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
                       selectedInterestFilter === 'sport'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-3xs'
                         : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
@@ -10517,7 +10565,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setSelectedInterestFilter(selectedInterestFilter === 'smartboxTagliando' ? 'all' : 'smartboxTagliando')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shrink-0 ${
                       selectedInterestFilter === 'smartboxTagliando'
                         ? 'bg-purple-600 text-white border-purple-700 shadow-3xs'
                         : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
@@ -10527,10 +10575,40 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-                  <span>Totale: <strong className="text-slate-800">{contacts.length}</strong></span>
-                  <span>•</span>
-                  <span>Filtrati: <strong className="text-emerald-600">{filteredContacts.length}</strong></span>
+                <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                  {/* View Mode Switcher (Cards vs Table) */}
+                  <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/50">
+                    <button
+                      type="button"
+                      onClick={() => setContactsViewMode('cards')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        contactsViewMode === 'cards'
+                          ? 'bg-white text-slate-900 shadow-3xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Vista a schede touch (ottimizzata per cellulare)"
+                    >
+                      <span>📱</span>
+                      <span className="hidden xs:inline">Schede</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setContactsViewMode('table')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        contactsViewMode === 'table'
+                          ? 'bg-white text-slate-900 shadow-3xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Vista a tabella completa"
+                    >
+                      <span>📊</span>
+                      <span className="hidden xs:inline">Tabella</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-500">
+                    <span>{filteredContacts.length} di {contacts.length}</span>
+                  </div>
                 </div>
               </div>
 
@@ -10612,8 +10690,193 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                <div className="overflow-x-auto h-full">
-                  <table className="w-full text-left border-collapse text-slate-800 min-w-[850px]">
+                <>
+                  {/* Mobile Touch Cards View (Responsive on phones or when cards view is active) */}
+                  <div className={`p-2.5 sm:p-3 space-y-2.5 overflow-y-auto overscroll-contain h-full touch-pan-y ${contactsViewMode === 'table' ? 'hidden' : 'block md:hidden'}`}>
+                    {filteredContacts.map((contact) => (
+                      <div 
+                        key={contact.id}
+                        className={`bg-white rounded-2xl border p-3.5 shadow-2xs text-left space-y-2.5 transition-all ${
+                          editingContactId === contact.id ? 'border-amber-400 bg-amber-50/20 ring-2 ring-amber-300' : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {/* Card Top: Initials Avatar, Name, Treatment Date */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0 shadow-3xs">
+                              {contact.contactName ? contact.contactName.trim().slice(0, 2) : '👤'}
+                            </div>
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedContactForDetail(contact)}
+                                className="font-black text-sm text-slate-900 hover:text-emerald-600 transition-colors cursor-pointer text-left truncate block"
+                                title="Visualizza dettagli completi"
+                              >
+                                {contact.contactName}
+                              </button>
+                              {contact.phone ? (
+                                <span className="text-[11px] font-semibold text-slate-500 font-mono block">
+                                  {contact.phone}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-300 italic block">Nessun cellulare</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Treatment Date & Month Pill */}
+                          {contact.skinDate ? (
+                            <div className="text-right shrink-0">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                Trattamento
+                              </span>
+                              <span className="inline-block text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200/90 rounded-md px-1.5 py-0.5 capitalize">
+                                📅 {new Date(contact.skinDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic shrink-0">Senza data</span>
+                          )}
+                        </div>
+
+                        {/* Quick Touch Action Bar: WhatsApp, Chiama, Modifica, Elimina */}
+                        <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                          {contact.phone ? (() => {
+                            const cleaned = String(contact.phone).replace(/\D/g, '');
+                            const waFormatted = (cleaned.length === 10 && cleaned.startsWith('3')) ? '39' + cleaned : cleaned;
+                            return (
+                              <>
+                                <a
+                                  href={`https://wa.me/${waFormatted}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-3xs"
+                                >
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.062 5.248 5.311 0 11.786 0c3.137.001 6.086 1.222 8.303 3.442 2.218 2.22 3.437 5.17 3.437 8.307-.005 6.486-5.253 11.732-11.73 11.732-2.008-.002-3.98-.517-5.732-1.496L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.316 0 9.64-4.32 9.643-9.637.002-2.578-1.002-5.001-2.825-6.825C16.467 2.328 14.048 1.326 11.47 1.326 6.155 1.326 1.83 5.645 1.828 10.963c0 1.701.447 3.361 1.295 4.837l-.953 3.477 3.564-.934zm11.332-6.52c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                  </svg>
+                                  <span>WhatsApp</span>
+                                </a>
+                                <a
+                                  href={`tel:${contact.phone}`}
+                                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors shrink-0"
+                                  title="Chiama al cellulare"
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                </a>
+                              </>
+                            );
+                          })() : null}
+
+                          <button
+                            type="button"
+                            onClick={() => handleEditContactClick(contact)}
+                            className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 rounded-xl transition-colors font-bold text-xs shrink-0 flex items-center gap-1"
+                            title="Modifica contatto"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span className="text-[10px] hidden xs:inline">Modifica</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteContact(contact.id)}
+                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 rounded-xl transition-colors shrink-0"
+                            title="Elimina contatto"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Reminder Bar if applicable */}
+                        {contact.hasReminder && contact.reminderDate && (() => {
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const target = new Date(contact.reminderDate + 'T00:00:00');
+                          const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                          const isDone = !!contact.reminderCompleted;
+                          const isToday = !isDone && diffDays === 0;
+                          const isOverdue = !isDone && diffDays < 0;
+
+                          return (
+                            <div className={`p-2 rounded-xl border flex items-center justify-between text-xs ${
+                              isDone 
+                                ? 'bg-emerald-50/60 border-emerald-200 text-emerald-800'
+                                : isToday
+                                ? 'bg-amber-100/70 border-amber-300 text-amber-900 font-bold animate-pulse'
+                                : isOverdue
+                                ? 'bg-rose-50 border-rose-200 text-rose-900 font-bold'
+                                : 'bg-sky-50/60 border-sky-200 text-sky-800'
+                            }`}>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span>{isDone ? '✓' : isToday ? '🔔' : isOverdue ? '⚠️' : '⏰'}</span>
+                                <span className="text-[11px] truncate">
+                                  {isDone ? 'Promemoria completato' : isToday ? 'OGGI: ' + (contact.reminderNote || 'Follow-up') : isOverdue ? `Scaduto da ${Math.abs(diffDays)} gg: ` + (contact.reminderNote || '') : `Tra ${diffDays} gg: ` + (contact.reminderNote || '')}
+                                </span>
+                              </div>
+                              {!isDone && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePatchReminder(contact.id, { completed: true })}
+                                  className="text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-lg shrink-0 ml-1.5 cursor-pointer"
+                                >
+                                  Fatto ✓
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Interests Badges */}
+                        <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                          {contact.evaluation && (
+                            <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                              <span>📊</span> Valutazione
+                            </span>
+                          )}
+                          {contact.activityInfo && (
+                            <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                              <span>ℹ️</span> Info Attività
+                            </span>
+                          )}
+                          {contact.sport && (
+                            <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                              <span>🏃</span> Sport
+                            </span>
+                          )}
+                          {contact.smartboxTagliando && (
+                            <span className="text-[10px] font-extrabold bg-purple-50 text-purple-800 border border-purple-200 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                              <span>🎁</span> Smartbox
+                            </span>
+                          )}
+                          {!contact.evaluation && !contact.activityInfo && !contact.sport && !contact.smartboxTagliando && (
+                            <span className="text-[10px] text-slate-400 italic">Nessun interesse specificato</span>
+                          )}
+                        </div>
+
+                        {/* Products & Notes if any */}
+                        {(contact.productsPurchased || contact.notes) && (
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 space-y-1 text-xs">
+                            {contact.productsPurchased && (
+                              <div className="text-[11px] text-slate-700">
+                                <strong className="text-slate-900 font-bold">🛍️ Prodotti:</strong> {contact.productsPurchased}
+                              </div>
+                            )}
+                            {contact.notes && (
+                              <div className="text-[11px] text-slate-600 italic">
+                                <strong className="text-slate-700 font-bold not-italic">📝 Note:</strong> {contact.notes}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Wide Table View */}
+                  <div className={`overflow-x-auto h-full ${contactsViewMode === 'cards' ? 'hidden md:block' : 'block'}`}>
+                    <table className="w-full text-left border-collapse text-slate-800 min-w-[850px]">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
                         <th className="p-3.5 pl-4">Nome Contatto</th>
@@ -10853,7 +11116,8 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-              )}
+              </>
+            )}
             </div>
           </div>
         );
@@ -10862,33 +11126,60 @@ export default function App() {
           /* FULLSCREEN VIEW */
           <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col w-full h-screen overflow-hidden text-slate-800 animate-fade-in">
             {/* Fullscreen Header */}
-            <div className="bg-slate-900 text-white px-5 sm:px-6 py-3.5 flex items-center justify-between shadow-md shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🗂️</span>
-                <div className="text-left">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-display font-extrabold text-sm sm:text-base tracking-wide uppercase text-white">
+            <div className="bg-slate-900 text-white px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between shadow-md shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <span className="text-xl sm:text-2xl shrink-0">🗂️</span>
+                <div className="text-left min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h3 className="font-display font-extrabold text-xs sm:text-base tracking-wide uppercase text-white truncate">
                       Database Contatti Privato
                     </h3>
-                    <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                    <span className="hidden sm:inline text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full shrink-0">
                       Schermo Intero
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">
-                    Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato visibile solo a te
+                  <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate">
+                    Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {/* Mobile Tab Switcher in Header */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (mobileContactsTab === 'form') {
+                      handleCancelContactEdit();
+                      setMobileContactsTab('list');
+                    } else {
+                      handleCancelContactEdit();
+                      setMobileContactsTab('form');
+                    }
+                  }}
+                  className="lg:hidden bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1 shadow-3xs"
+                >
+                  {mobileContactsTab === 'form' ? (
+                    <>
+                      <span>📋</span>
+                      <span>Vedi Elenco</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>➕</span>
+                      <span>Nuovo Contatto</span>
+                    </>
+                  )}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setIsContactsDbFullscreen(false)}
-                  className="text-slate-300 hover:text-white px-3 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1.5 border border-slate-700"
+                  className="hidden md:flex text-slate-300 hover:text-white px-2.5 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold items-center gap-1.5 border border-slate-700"
                   title="Riduci a visualizzazione finestra"
                 >
                   <Minimize2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Riduci Finestra</span>
+                  <span className="hidden lg:inline">Riduci Finestra</span>
                 </button>
                 <button
                   type="button"
@@ -10896,24 +11187,30 @@ export default function App() {
                     setIsContactsDbOpen(false);
                     handleCancelContactEdit();
                   }}
-                  className="bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white px-3.5 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1.5"
+                  className="bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1.5"
                   title="Chiudi archivio database"
                 >
                   <X className="w-4 h-4" />
-                  <span>Chiudi</span>
+                  <span className="hidden sm:inline">Chiudi</span>
                 </button>
               </div>
             </div>
 
             {/* Fullscreen Main Workspace */}
-            <div className="flex-1 min-h-0 p-4 lg:p-5 flex flex-col lg:flex-row gap-5 overflow-hidden">
-              {/* Left Column: Form (Width fixed on desktop, full height) */}
-              <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 h-full flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 p-2 sm:p-4 lg:p-5 flex flex-col lg:flex-row gap-3 lg:gap-5 overflow-hidden">
+              {/* Form Column: On mobile, only shown if mobileContactsTab === 'form'; on lg desktop, always visible */}
+              <div className={`w-full lg:w-[380px] xl:w-[410px] shrink-0 h-full flex flex-col overflow-hidden ${
+                mobileContactsTab === 'form' ? 'flex flex-1 lg:flex-none' : 'hidden lg:flex'
+              }`}>
                 {renderContactForm()}
               </div>
 
-              {/* Right Column: Fullscreen Table + Filters */}
-              {renderContactsTableAndFilters()}
+              {/* Table / List Column: On mobile, only shown if mobileContactsTab === 'list'; on lg desktop, always visible */}
+              <div className={`flex-1 min-w-0 h-full flex flex-col overflow-hidden ${
+                mobileContactsTab === 'list' ? 'flex' : 'hidden lg:flex'
+              }`}>
+                {renderContactsTableAndFilters()}
+              </div>
             </div>
           </div>
         ) : (
@@ -10922,26 +11219,45 @@ export default function App() {
             <div className="bg-white rounded-3xl max-w-7xl w-full shadow-2xl border border-slate-150 overflow-hidden text-slate-800 flex flex-col max-h-[95vh] h-full animate-scale-up">
               
               {/* Windowed Header */}
-              <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🗂️</span>
-                  <div className="text-left">
-                    <h3 className="font-display font-extrabold text-sm tracking-wide uppercase">Database Contatti Privato</h3>
-                    <p className="text-[10px] text-slate-400 font-medium">
-                      Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato visibile solo a te
+              <div className="bg-slate-900 text-white p-3.5 sm:p-5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <span className="text-xl sm:text-2xl shrink-0">🗂️</span>
+                  <div className="text-left min-w-0">
+                    <h3 className="font-display font-extrabold text-xs sm:text-sm tracking-wide uppercase truncate">
+                      Database Contatti Privato
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium truncate">
+                      Operatore: <strong className="text-white">{activeCoach.name}</strong> • 🔒 Archivio privato
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  {/* Mobile Tab Switcher */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (mobileContactsTab === 'form') {
+                        handleCancelContactEdit();
+                        setMobileContactsTab('list');
+                      } else {
+                        handleCancelContactEdit();
+                        setMobileContactsTab('form');
+                      }
+                    }}
+                    className="lg:hidden bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-black flex items-center gap-1 shadow-3xs"
+                  >
+                    {mobileContactsTab === 'form' ? '📋 Elenco' : '➕ Nuovo'}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setIsContactsDbFullscreen(true)}
-                    className="text-slate-300 hover:text-white px-3 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1.5 border border-slate-700"
+                    className="hidden sm:flex text-slate-300 hover:text-white px-2.5 py-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer text-xs font-bold items-center gap-1.5 border border-slate-700"
                     title="Espandi a schermo intero"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Schermo Intero</span>
+                    <span className="hidden lg:inline">Schermo Intero</span>
                   </button>
                   <button
                     type="button"
@@ -10949,7 +11265,7 @@ export default function App() {
                       setIsContactsDbOpen(false);
                       handleCancelContactEdit();
                     }}
-                    className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold"
+                    className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold p-1"
                   >
                     ✕
                   </button>
@@ -10957,11 +11273,17 @@ export default function App() {
               </div>
 
               {/* Windowed Body */}
-              <div className="p-4 sm:p-5 overflow-hidden flex-1 flex flex-col lg:flex-row gap-5 min-h-0 bg-slate-100/50">
-                <div className="w-full lg:w-[360px] shrink-0 h-full flex flex-col overflow-hidden">
+              <div className="p-2.5 sm:p-4 lg:p-5 overflow-hidden flex-1 flex flex-col lg:flex-row gap-3 lg:gap-5 min-h-0 bg-slate-100/50">
+                <div className={`w-full lg:w-[360px] shrink-0 h-full flex flex-col overflow-hidden ${
+                  mobileContactsTab === 'form' ? 'flex flex-1 lg:flex-none' : 'hidden lg:flex'
+                }`}>
                   {renderContactForm()}
                 </div>
-                {renderContactsTableAndFilters()}
+                <div className={`flex-1 min-w-0 h-full flex flex-col overflow-hidden ${
+                  mobileContactsTab === 'list' ? 'flex' : 'hidden lg:flex'
+                }`}>
+                  {renderContactsTableAndFilters()}
+                </div>
               </div>
 
               {/* Windowed Footer */}
